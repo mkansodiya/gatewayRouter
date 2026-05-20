@@ -1,0 +1,90 @@
+========================================================================
+JAZPAYS MERCHANT INFRASTRUCTURE - API DOCUMENTATION
+========================================================================
+
+1. PURCHASE / COLLECTION API
+------------------------------------------------------------------------
+Initialize live payment orders.
+
+* Service Endpoint: POST https://api.jazpays.com/v1/create
+* Content-Type: application/json
+
+Required Parameters:
+- merchant_id (STRING): Your unique merchant identifier.
+- api_key (STRING): The Secret API key found in your dashboard.
+- amount (DECIMAL): Transaction amount (e.g., 1000.00).
+- merchant_order_no (STRING): Unique ID from your shopping cart.
+- callback_url (URL): Server endpoint for status updates.
+- signature (MD5): HMAC-style MD5 security hash.
+
+Security Authentication (Signature Generation):
+To generate the signature value, follow these four steps:
+1. Dataset Prepare: Collect merchant_id, amount, merchant_order_no, and callback_url.
+2. Sort Logic: Arrange parameters alphabetically by key (Ascending).
+   Order: amount -> callback_url -> merchant_id -> merchant_order_no
+3. Build String: Concatenate using & (field=value). Append your secret: &key=YOUR_API_KEY.
+4. Hash Generation: Perform MD5 hash on the final string.
+
+Sample JSON Request:
+{
+  "merchant_id": "100222001",
+  "amount": "1000.00",
+  "merchant_order_no": "ORD123PX",
+  "callback_url": "https://site.com/cb",
+  "api_key": "YOUR_API_KEY",
+  "signature": "8a2f...39b"
+}
+
+PHP Implementation:
+<?php
+$params = [
+    "merchant_id" => "100222001",
+    "amount" => "1000.00",
+    "merchant_order_no" => "ORD_" . time(),
+    "callback_url" => "https://site.com/cb"
+];
+
+ksort($params);
+$signStr = "";
+foreach ($params as $k => $v) {
+    $signStr .= $k."=".$v."&";
+}
+$signStr .= "key=YOUR_API_KEY";
+$signature = md5($signStr);
+?>
+
+
+2. PAYMENT WEBHOOKS
+------------------------------------------------------------------------
+Automated server-to-server notifications.
+
+Notification Payload:
+{
+  "orderNo": "GW20250001",
+  "merchantOrder": "ORD1001",
+  "status": "success",
+  "amount": 1000,
+  "signature": "..."
+}
+
+Validation Protocol:
+- Verify orderNo matches your record
+- Ensure status is success
+- Strictly match amount
+- Avoid double-crediting (check duplication)
+- Return success to stop retries
+
+
+3. SECURITY & INTEGRATION BEST PRACTICES
+------------------------------------------------------------------------
+* CALLBACK PROTECTION: Always use HTTPS/SSL for your callback endpoints. 
+  Our servers will reject non-secure HTTP endpoints for production environments.
+* LOGGING: Maintain a raw log of all incoming callback data. Use 
+  file_get_contents('php://input') to capture the raw payload for debugging.
+* IDEMPOTENCY: Check for duplicate order numbers in your database before 
+  processing a callback to avoid double-crediting users.
+* TIME SYNC: Ensure your server time is synchronized via NTP. Large drifts 
+  can cause signature verification issues if timestamps are involved.
+
+------------------------------------------------------------------------
+(c) 2026 JAZPAYS MERCHANT INFRASTRUCTURE

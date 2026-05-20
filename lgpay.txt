@@ -1,0 +1,427 @@
+# LGPay Gateway — API Integration Documentation
+
+> **Plugin:** Lgpay PMPro Gateway (Bangladesh) v1.0.0  
+> **Author:** Mewaram Kansodiya  
+> **Gateway:** [lg-pay.com](https://www.lg-pay.com) — Accepts Nagad & bKash payments (Bangladesh)  
+> **Purpose:** This document describes how the LGPay API is integrated. Share this with your backend developer.
+
+---
+
+## 1. Overview
+
+LGPay processes **mobile money payments from Bangladesh** (Nagad & bKash). It is similar to OkPay in architecture — uses MD5 signature authentication, has Create + Query endpoints, and a webhook. 
+
+> [!IMPORTANT]
+> **Currency Conversion is automatic:** Your membership prices are in INR. LGPay only accepts BDT (Bangladeshi Taka). The plugin auto-fetches the live INR→BDT exchange rate and converts the amount before sending to the API.
+
+| Operation | HTTP Method | Endpoint |
+|---|---|---|
+| Create Payment Order | `POST` | `https://www.lg-pay.com/api/order/create` |
+| Query Payment Status | `POST` | `https://www.lg-pay.com/api/order/query` |
+| Receive Webhook | `POST` | Your server: `/?pmpro_lgpay_webhook=1` |
+
+---
+
+## 2. Credentials & Configuration
+
+| Setting | WordPress Option Key | Admin Field Label | Description |
+|---|---|---|---|
+| App ID | `pmpro_lgpay_appid` | App ID (Merchant Login) | Your LGPay merchant App ID |
+| Merchant Key | `pmpro_lgpay_key` | Merchant Key | Secret key used for signature generation |
+| Exchange Rate | `pmpro_lgpay_exchange_rate` | Exchange Rate (INR to BDT) | Fixed rate or `auto` to fetch live rate |
+
+> [!NOTE]
+> The **API Host is hardcoded** to `https://www.lg-pay.com` — it is not configurable in settings.
+
+---
+
+## 3. Currency Conversion (INR → BDT)
+
+LGPay **only accepts BDT**. The plugin performs an automatic conversion at the time of checkout.
+
+### Exchange Rate Resolution (Priority Order)
+
+1. **Manual rate** — If `pmpro_lgpay_exchange_rate` is a numeric value > 0, use it directly.
+2. **Cached live rate** — If a live rate was previously fetched, use the WordPress transient cache (valid for 12 hours).
+3. **Live fetch** — Call `https://open.er-api.com/v6/latest/INR` (free, no API key needed), read `rates.BDT`.
+4. **Hardcoded fallback** — If the API fails, use `1.4` (approximately 1 INR = 1.4 BDT).
+
+### Amount Conversion Formula
+
+```
+BDT amount = INR total × exchange_rate
+Money (API field) = round(BDT amount × 100)   ← Sent as integer (paise-equivalent in BDT)
+```
+
+**Example:** INR 500 at rate 1.35 = BDT 675.00 → `money = 67500`
+
+```php
+$bdt_total = floatval($order->total) * $exchange_rate;
+$money = intval(round($bdt_total * 100)); // Always an integer
+```
+
+---
+
+## 4. Signature Generation (MD5 — UPPERCASE)
+
+> [!IMPORTANT]
+> **LGPay's signature differs from OkPay in two critical ways:**
+> 1. Uses `http_build_query()` + `urldecode()` instead of a manual `key=val&` loop.
+> 2. Result is **UPPERCASE** MD5 (not lowercase like OkPay).
+
+### Algorithm
+
+1. Remove the `sign` field from the parameters (if present).
+2. Remove any parameters with **empty or null values**.
+3. **Sort parameters alphabetically by key name** (`ksort`).
+4. Build a query string using `http_build_query($data, '', '&')`.
+5. **URL-decode** the resulting string (`urldecode()`).
+6. Trim the string and append `&key=YOUR_MERCHANT_KEY`.
+7. Compute **MD5** of the full string.
+8. Convert the result to **UPPERCASE**.
+
+### PHP Implementation
+
+```php
+function generate_sign(array $data, string $key): string {
+    unset($data['sign']);
+    $key = trim($key);
+
+    // Remove empty/null values
+    $data = array_filter($data, function($val) {
+        return $val !== "" && !is_null($val);
+    });
+
+    ksort($data);
+
+    $string = http_build_query($data, '', '&');
+    $string = urldecode($string);            // IMPORTANT: URL-decode before hashing
+    $string = trim($string) . "&key=" . $key;
+
+    return strtoupper(md5($string));         // UPPERCASE result
+}
+```
+
+### Key Difference vs OkPay
+
+| | OkPay | LGPay |
+|---|---|---|
+| Sign string builder | Manual `key=val&` loop | `http_build_query()` + `urldecode()` |
+| MD5 case | **lowercase** | **UPPERCASE** |
+| Empty value handling | Skip in loop | `array_filter()` before sort |
+
+---
+
+## 5. API Endpoint 1: Create Payment Order
+
+### Request
+
+- **URL:** `https://www.lg-pay.com/api/order/create`
+- **Method:** `POST`
+- **Content-Type:** `application/x-www-form-urlencoded`
+
+### Request Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `app_id` | string | ✅ | Your LGPay App ID |
+| `trade_type` | string | ✅ | Payment method: `"Nagad"` or `"bKash"` |
+| `order_sn` | string | ✅ | Unique order serial number from your system |
+| `money` | integer | ✅ | Amount in **BDT × 100** (e.g., BDT 675.00 → `67500`) |
+| `notify_url` | string | ✅ | Your webhook callback URL |
+| `ip` | string | ✅ | Buyer's IP address |
+| `remark` | string | ❌ | Custom note (e.g., `"Membership Order #ABC123"`) |
+| `sign` | string | ✅ | UPPERCASE MD5 signature (see Section 4) |
+
+### Example Request (PHP/cURL)
+
+```php
+$exchange_rate = 1.35; // INR to BDT
+$inr_amount    = 500;
+$bdt_total     = $inr_amount * $exchange_rate;
+$money         = intval(round($bdt_total * 100)); // 67500
+
+$params = [
+    'app_id'     => 'YOUR_APP_ID',
+    'trade_type' => 'Nagad',          // or 'bKash'
+    'order_sn'   => 'ORDER123',
+    'money'      => $money,
+    'notify_url' => 'https://yoursite.com/?pmpro_lgpay_webhook=1',
+    'ip'         => $_SERVER['REMOTE_ADDR'],
+    'remark'     => 'Membership Order #ORDER123',
+];
+$params['sign'] = generate_sign($params, 'YOUR_MERCHANT_KEY');
+
+$ch = curl_init('https://www.lg-pay.com/api/order/create');
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+$response = curl_exec($ch);
+curl_close($ch);
+
+$result = json_decode($response, true);
+```
+
+### Success Response
+
+```json
+{
+  "status": 1,
+  "msg": "success",
+  "data": {
+    "pay_url": "https://www.lg-pay.com/pay/session/abc123xyz"
+  }
+}
+```
+
+| Field | Description |
+|---|---|
+| `status` | `1` = success (integer), anything else = error |
+| `msg` | Human-readable message |
+| `data.pay_url` | The **payment page URL** — redirect or iframe the user here |
+
+> [!NOTE]
+> LGPay does **not** return a `transaction_Id` in the create order response. The `order_sn` is used as the transaction reference throughout.
+
+### Error Response
+
+```json
+{
+  "status": 0,
+  "msg": "Invalid signature or app_id"
+}
+```
+
+---
+
+## 6. API Endpoint 2: Query Payment Status
+
+### Request
+
+- **URL:** `https://www.lg-pay.com/api/order/query`
+- **Method:** `POST`
+- **Content-Type:** `application/x-www-form-urlencoded`
+
+### Request Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `app_id` | string | ✅ | Your LGPay App ID |
+| `order_sn` | string | ✅ | The same order serial number sent in create request |
+| `sign` | string | ✅ | UPPERCASE MD5 signature (see Section 4) |
+
+### Example Request (PHP/cURL)
+
+```php
+$params = [
+    'app_id'   => 'YOUR_APP_ID',
+    'order_sn' => 'ORDER123',
+];
+$params['sign'] = generate_sign($params, 'YOUR_MERCHANT_KEY');
+
+$ch = curl_init('https://www.lg-pay.com/api/order/query');
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+$response = curl_exec($ch);
+curl_close($ch);
+
+$result = json_decode($response, true);
+```
+
+### Success Response
+
+```json
+{
+  "status": 1,
+  "data": {
+    "money": 67500
+  }
+}
+```
+
+### Payment Status Values
+
+| `status` | Meaning |
+|---|---|
+| `1` | **Payment Successful** ✅ |
+| `0` | Pending / Not yet paid |
+
+> [!NOTE]
+> `data.money` is the amount in BDT × 100 (same unit as the create request).
+
+---
+
+## 7. Webhook (Async Callback Notification)
+
+LGPay will **POST to your `notify_url`** when a payment is completed.
+
+### Your Webhook URL Format
+
+```
+https://yoursite.com/?pmpro_lgpay_webhook=1
+```
+
+### Webhook POST Payload Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `order_sn` | string | Your original order serial number |
+| `status` | integer | `1` = payment success |
+| `sign` | string | UPPERCASE MD5 signature to verify authenticity |
+| _(other fields may be present)_ | | |
+
+### Webhook Verification & Handler Logic
+
+1. Receive `POST` data.
+2. Extract `sign` from the payload.
+3. **Compute your own signature** from remaining fields using `generate_sign()`.
+4. Compare: `incoming_sign === computed_sign` (strict match) → trusted.
+5. Check `order_sn` is not empty.
+6. Look up the local order by `order_sn` code.
+7. Confirm `order.status === 'pending'` and `data.status == 1`.
+8. Activate membership, set order `status = 'success'`.
+9. **Respond with plain text `ok`** to acknowledge.
+
+> [!IMPORTANT]
+> LGPay expects the response body to be exactly **`ok`** (not `success` like OkPay). Responding with anything else may cause LGPay to retry the webhook.
+
+### PHP Webhook Handler Example
+
+```php
+$data        = $_POST;
+$mch_key     = 'YOUR_MERCHANT_KEY';
+$incoming    = $data['sign'] ?? '';
+$computed    = generate_sign($data, $mch_key);
+
+if ($incoming !== $computed || empty($data['order_sn'])) {
+    die('error');
+}
+
+$order_sn = sanitize_text_field($data['order_sn']);
+$order    = get_order_by_code($order_sn); // your implementation
+
+if (!empty($order->id) && $order->status === 'pending' && $data['status'] == 1) {
+    // Activate membership
+    activate_membership($order);
+    echo 'ok';
+    die();
+}
+
+if (!empty($order->id) && $order->status === 'success') {
+    echo 'ok'; // Already activated, acknowledge again
+    die();
+}
+
+die('error');
+```
+
+---
+
+## 8. Payment Method Selection (Trade Type)
+
+LGPay supports two payment methods, which the user selects on the checkout page:
+
+| `trade_type` | Payment Method |
+|---|---|
+| `Nagad` | Pay via Nagad (default) |
+| `bKash` | Pay via bKash |
+
+The selected payment method is passed as a POST field `pmpro_lgpay_trade_type` from the checkout form and forwarded directly to the API as `trade_type`.
+
+**Default:** If no selection is made, `Nagad` is used as the fallback.
+
+---
+
+## 9. Payment Flow (End-to-End)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant YourServer
+    participant OpenExchangeAPI
+    participant LGPayAPI
+
+    User->>YourServer: Submits checkout (gateway=pmpro-lgpay, trade_type=Nagad/bKash)
+    YourServer->>OpenExchangeAPI: GET /v6/latest/INR (if no cached rate)
+    OpenExchangeAPI-->>YourServer: { rates: { BDT: 1.35 } }
+    YourServer->>YourServer: Convert INR → BDT, compute money × 100
+    YourServer->>YourServer: Create local pending order, generate order_sn
+    YourServer->>LGPayAPI: POST /api/order/create (app_id, trade_type, order_sn, money, sign...)
+    LGPayAPI-->>YourServer: { status:1, data: { pay_url } }
+    YourServer->>User: Show confirmation page (INR + BDT amount), then iframe pay_url
+    User->>LGPayAPI: User completes Nagad/bKash payment
+    LGPayAPI->>YourServer: POST /?pmpro_lgpay_webhook=1 (order_sn, status=1, sign)
+    YourServer->>YourServer: Verify sign, activate membership
+    YourServer-->>LGPayAPI: Respond "ok"
+    YourServer->>User: Redirect to confirmation page
+```
+
+---
+
+## 10. Polling / Background Verification (Cron)
+
+In addition to the webhook, the plugin **polls the Query API** as a safety net:
+
+| Cron Job | Frequency | Orders Checked |
+|---|---|---|
+| Fast cron (`pmpro_lgpay_fast_cron`) | Every minute | Orders created in the last 2 minutes |
+| Standard cron (`pmpro_lgpay_standard_cron`) | Hourly | Orders older than 2 minutes, up to 24 hours |
+
+Each cron job queries up to **15 pending orders** per run and calls `/api/order/query` for each.
+
+---
+
+## 11. Comparison with Other Gateways
+
+| Feature | LGPay | OkPay | IMB |
+|---|---|---|---|
+| Region | 🇧🇩 Bangladesh | 🇮🇳 India | 🇮🇳 India |
+| Payment Methods | Nagad, bKash | UPI/QR | UPI |
+| Currency | BDT (converted from INR) | INR | INR |
+| Auth Method | MD5 signature | MD5 signature | Bearer token (`user_token`) |
+| Sign case | **UPPERCASE** | lowercase | No signature |
+| API Host | `www.lg-pay.com` (hardcoded) | Configurable | Configurable |
+| Create Order endpoint | `/api/order/create` | `/v1/Collect` | `{host_url}` |
+| Query endpoint | `/api/order/query` | `/v1/Query/Collect` | ❌ None |
+| Webhook response | `ok` | `success` | _(REST, auto exit)_ |
+| Background polling | ✅ Every minute + hourly | ✅ Every minute + hourly | ❌ None |
+| Order ID field name | `order_sn` | `out_trade_no` | `order_id` |
+| Amount unit | BDT × 100 (integer) | INR (integer string) | INR (float) |
+
+---
+
+## 12. Notes & Edge Cases
+
+| Topic | Detail |
+|---|---|
+| **Sign is UPPERCASE** | `strtoupper(md5(...))` — do NOT use lowercase |
+| **Amount is BDT × 100** | `money = round(INR_total × rate × 100)` — always an integer |
+| **No transaction ID from LGPay** | LGPay doesn't return a distinct `transaction_Id` in create/query responses. The `order_sn` is used as the transaction reference |
+| **Webhook field is `order_sn`** | Not `order_id` or `out_trade_no` — match exactly |
+| **Webhook response is `ok`** | Plain text, not `success` |
+| **Empty values excluded from sign** | Use `array_filter()` to remove empty/null values before sorting |
+| **URL-decode the sign string** | `urldecode(http_build_query(...))` before appending key — critical step |
+| **Exchange rate is cached 12 hours** | Uses WordPress transients (`pmpro_lgpay_live_rate_inr_bdt`) |
+| **Exchange rate fallback** | If live fetch fails, uses `1.4` (1 INR ≈ 1.4 BDT) |
+| **IP is required** | Pass the buyer's real IP (`$_SERVER['REMOTE_ADDR']`) — use `0.0.0.0` as fallback |
+| **Trade type default** | Defaults to `Nagad` if not specified by the user |
+
+---
+
+## 13. Configuration Checklist (For Developer)
+
+- [ ] Obtain **App ID** from LGPay merchant dashboard
+- [ ] Obtain **Merchant Key** from LGPay
+- [ ] Enter both in **PMPro → Payment Settings → Gateway: LGPay**
+- [ ] Optionally set a fixed INR→BDT exchange rate (or leave blank for auto-fetch)
+- [ ] Ensure `/?pmpro_lgpay_webhook=1` is accessible via `POST` on your server
+- [ ] Register `https://yoursite.com/?pmpro_lgpay_webhook=1` as the notify URL in your LGPay merchant dashboard
+- [ ] Verify that your server responds `ok` (not `success`) on successful webhook processing
+- [ ] Test with Nagad and bKash before going live
+
+---
+
+*Documentation auto-generated from plugin source code: `pmpro-lgpay`*

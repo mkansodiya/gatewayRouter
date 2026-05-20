@@ -1,0 +1,373 @@
+# OkPay Gateway — API Integration Documentation
+
+> **Plugin:** OkPay PMPro Gateway v1.1.1  
+> **Author:** Mewaram Kansodiya  
+> **Purpose:** This document describes how the OkPay (wpay.one) Payment API is integrated. Share this with your backend developer.
+
+---
+
+## 1. Overview
+
+OkPay uses a **REST API hosted at `wpay.one`** to process UPI/QR-based payments (India). The integration involves three operations:
+
+| Operation | HTTP Method | Endpoint |
+|---|---|---|
+| Create Payment Order (Payin) | `POST` | `/v1/Collect` |
+| Query Payment Status | `POST` | `/v1/Query/Collect` |
+| Receive Webhook Notification | `POST` | Your server (callback URL) |
+
+---
+
+## 2. Credentials & Configuration
+
+These are stored as WordPress options and configured in the PMPro Payment Settings admin panel.
+
+| Setting | WordPress Option Key | Description |
+|---|---|---|
+| Merchant ID | `pmpro_okpay_mchid` | Your merchant account ID issued by OkPay |
+| Merchant Key | `pmpro_okpay_key` | Secret key used for signature generation |
+| API Host | `pmpro_okpay_host` | Base URL of the API server |
+
+### Sandbox vs Production
+
+| Environment | Host |
+|---|---|
+| **Sandbox (Testing)** | `https://sandbox.wpay.one` |
+| **Production** | Contact OkPay / check their documentation for the live host |
+
+---
+
+## 3. Signature Generation (MD5)
+
+All API requests **must include a `sign` field**. The signature is computed as follows:
+
+### Algorithm
+
+1. Collect all request parameters (**exclude the `sign` field itself**).
+2. Remove any parameters with **empty or null values**.
+3. **Sort parameters alphabetically by key name** (`ksort`).
+4. Build a query string in the format: `key1=val1&key2=val2&...`
+5. Append `&key=YOUR_MERCHANT_KEY` to the end of the string.
+6. Compute **MD5** of the full string.
+7. Convert the result to **lowercase**.
+
+### PHP Implementation
+
+```php
+function generate_sign(array $params, string $key): string {
+    unset($params['sign']); // Remove sign from params if present
+    ksort($params);         // Sort by key alphabetically
+
+    $string = "";
+    foreach ($params as $k => $v) {
+        if ($v !== "" && !is_null($v)) {
+            $string .= $k . "=" . $v . "&";
+        }
+    }
+
+    $string = rtrim($string, "&");       // Remove trailing &
+    $string .= "&key=" . $key;           // Append secret key
+
+    return strtolower(md5($string));     // Return lowercase MD5
+}
+```
+
+### Example
+
+Given params:
+```
+mchId=1000
+out_trade_no=ORDER123
+money=500
+currency=INR
+pay_type=UPI
+notify_url=https://yoursite.com/?pmpro_okpay_webhook=1
+returnUrl=https://yoursite.com/
+attach=Membership Order #ORDER123
+```
+
+Sorted string (before appending key):
+```
+attach=Membership Order #ORDER123&currency=INR&mchId=1000&money=500&notify_url=https://...&out_trade_no=ORDER123&pay_type=UPI&returnUrl=https://...
+```
+
+Final string:
+```
+attach=...&currency=INR&mchId=...&money=...&notify_url=...&out_trade_no=...&pay_type=...&returnUrl=...&key=YOUR_MERCHANT_KEY
+```
+
+Result: `strtolower(md5(above_string))`
+
+---
+
+## 4. API Endpoint 1: Create Payment Order
+
+### Request
+
+- **URL:** `{API_HOST}/v1/Collect`
+- **Method:** `POST`
+- **Content-Type:** `application/x-www-form-urlencoded`
+
+### Request Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `mchId` | string | ✅ | Your Merchant ID |
+| `out_trade_no` | string | ✅ | Unique order reference number from your system |
+| `money` | integer (string) | ✅ | Amount in **INR** (no decimals, e.g. `"500"`) |
+| `currency` | string | ✅ | Always `INR` |
+| `pay_type` | string | ✅ | Always `UPI` |
+| `notify_url` | string | ✅ | Your webhook callback URL (see Section 6) |
+| `returnUrl` | string | ✅ | URL to redirect user after payment |
+| `attach` | string | ❌ | Custom note/description (e.g., `"Membership Order #123"`) |
+| `sign` | string | ✅ | MD5 signature (see Section 3) |
+
+### Example Request (PHP/cURL)
+
+```php
+$params = [
+    'mchId'        => '1000',
+    'out_trade_no' => 'ORDER123',
+    'money'        => '500',
+    'currency'     => 'INR',
+    'pay_type'     => 'UPI',
+    'notify_url'   => 'https://yoursite.com/?pmpro_okpay_webhook=1',
+    'returnUrl'    => 'https://yoursite.com/',
+    'attach'       => 'Membership Order #ORDER123',
+];
+$params['sign'] = generate_sign($params, 'YOUR_MERCHANT_KEY');
+
+$ch = curl_init('https://sandbox.wpay.one/v1/Collect');
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+$response = curl_exec($ch);
+curl_close($ch);
+
+$result = json_decode($response, true);
+```
+
+### Success Response
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "url": "https://pay.wpay.one/payment/abc123xyz",
+    "transaction_Id": "TXN987654321"
+  }
+}
+```
+
+| Field | Description |
+|---|---|
+| `code` | `0` = success, anything else = error |
+| `msg` | Human-readable message |
+| `data.url` | The **payment page URL** — redirect or iframe the user here |
+| `data.transaction_Id` | OkPay's internal transaction reference |
+
+### Error Response
+
+```json
+{
+  "code": 1001,
+  "msg": "Invalid signature"
+}
+```
+
+---
+
+## 5. API Endpoint 2: Query Payment Status
+
+### Request
+
+- **URL:** `{API_HOST}/v1/Query/Collect`
+- **Method:** `POST`
+- **Content-Type:** `application/x-www-form-urlencoded`
+
+### Request Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `mchId` | string | ✅ | Your Merchant ID |
+| `out_trade_no` | string | ✅ | The same order reference you sent in the Collect request |
+| `sign` | string | ✅ | MD5 signature (see Section 3) |
+
+### Example Request (PHP/cURL)
+
+```php
+$params = [
+    'mchId'        => '1000',
+    'out_trade_no' => 'ORDER123',
+];
+$params['sign'] = generate_sign($params, 'YOUR_MERCHANT_KEY');
+
+$ch = curl_init('https://sandbox.wpay.one/v1/Query/Collect');
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+$response = curl_exec($ch);
+curl_close($ch);
+
+$result = json_decode($response, true);
+```
+
+### Success Response
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "status": 1,
+    "trade_no": "OKPAY_INTERNAL_TXN_ID",
+    "transaction_Id": "TXN987654321",
+    "out_trade_no": "ORDER123"
+  }
+}
+```
+
+### Payment Status Values
+
+| `data.status` | Meaning |
+|---|---|
+| `1` | **Payment Successful** ✅ |
+| `0` | Pending / Not yet paid |
+
+### Error Response
+
+```json
+{
+  "code": 1002,
+  "msg": "Order not found"
+}
+```
+
+---
+
+## 6. Webhook (Async Callback Notification)
+
+OkPay will **POST to your `notify_url`** when a payment is completed.
+
+### Your Webhook URL Format
+
+```
+https://yoursite.com/?pmpro_okpay_webhook=1
+```
+
+### Webhook POST Payload Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `out_trade_no` | string | Your original order reference |
+| `trade_no` | string | OkPay's internal transaction ID |
+| `status` | integer | `1` = success |
+| `sign` | string | MD5 signature to verify authenticity |
+| _(other fields may be present)_ | | |
+
+### Webhook Verification Steps
+
+1. Receive the `POST` data.
+2. Extract `sign` from the payload.
+3. **Compute your own signature** from the remaining fields using `generate_sign()`.
+4. Compare: if `incoming_sign === computed_sign` → trusted notification.
+5. Check `out_trade_no` matches a real pending order.
+6. Check `status == 1` to confirm payment success.
+7. Activate the user's order/membership.
+8. **Respond with plain text `success`** to acknowledge receipt.
+
+### PHP Webhook Handler Example
+
+```php
+$data = $_POST;
+$mch_key = 'YOUR_MERCHANT_KEY';
+
+$incoming_sign  = $data['sign'] ?? '';
+$computed_sign  = generate_sign($data, $mch_key);
+
+if ($incoming_sign !== $computed_sign) {
+    die('error'); // Signature mismatch — reject
+}
+
+if (empty($data['out_trade_no']) || (int)$data['status'] !== 1) {
+    die('error');
+}
+
+$order_ref = $data['out_trade_no']; // Use this to find and activate the order
+$trade_no  = $data['trade_no'];     // OkPay's transaction ID — store this
+
+// ... activate membership / mark order as paid ...
+
+die('success'); // IMPORTANT: Must respond with "success"
+```
+
+> [!IMPORTANT]
+> Your webhook endpoint **must respond with the plain text `success`** (no quotes, no HTML). If OkPay does not receive `success`, it will retry the webhook multiple times.
+
+---
+
+## 7. Payment Flow (End-to-End)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant YourServer
+    participant OkPayAPI
+
+    User->>YourServer: Submits checkout form
+    YourServer->>YourServer: Create local pending order
+    YourServer->>OkPayAPI: POST /v1/Collect (with params + sign)
+    OkPayAPI-->>YourServer: { code:0, data: { url, transaction_Id } }
+    YourServer->>User: Redirect/iframe user to data.url
+    User->>OkPayAPI: User completes UPI/QR payment
+    OkPayAPI->>YourServer: POST to notify_url (webhook)
+    YourServer->>YourServer: Verify sign, activate order
+    YourServer-->>OkPayAPI: Respond "success"
+    YourServer->>User: Redirect to confirmation page
+```
+
+---
+
+## 8. Polling / Manual Status Check
+
+In addition to the webhook, the plugin **polls the Query API** in the background to catch any missed webhooks.
+
+- **Every minute:** Check orders created in the last 2 minutes
+- **Hourly:** Check older pending orders (up to 24 hours old)
+
+Your developer can implement a similar polling mechanism as a fallback using the `/v1/Query/Collect` endpoint.
+
+---
+
+## 9. Notes & Edge Cases
+
+| Topic | Detail |
+|---|---|
+| **Amount format** | Send as a whole-number string (e.g., `"500"` not `"500.00"`) |
+| **Currency** | Only `INR` is supported |
+| **Pay type** | Only `UPI` is used |
+| **`out_trade_no` uniqueness** | Must be unique per transaction. If retrying, append a timestamp suffix (e.g., `ORDER123-1716123456`) |
+| **Webhook `out_trade_no` matching** | Strip any appended timestamp suffix before looking up the local order |
+| **Sign comparison** | Use strict string comparison (`===`), not loose (`==`) |
+| **Empty values in sign** | Skip fields where value is `""` or `null` when building the sign string |
+| **Timeout** | Create Order: 30s timeout. Query: 20s timeout |
+
+---
+
+## 10. Sandbox Credentials (For Testing)
+
+> [!WARNING]
+> These are test credentials from the plugin source. **Do NOT use in production.**
+
+| Field | Value |
+|---|---|
+| Merchant ID | `1000` |
+| Merchant Key | `eb6080dbc8dc429ab86a1cd1c337975d` |
+| API Host | `https://sandbox.wpay.one` |
+
+---
+
+*Documentation auto-generated from plugin source code: `pmpro-okpay-8`*
