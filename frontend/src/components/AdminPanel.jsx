@@ -156,6 +156,7 @@ function GatewayAdminRow({ gateway, onUpdated, onError }) {
 }
 
 function APIDocumentation() {
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
   const [apiEndpoint, setApiEndpoint] = useState('create_order'); // 'create_order' or 'status_check'
   const [activeCodeTab, setActiveCodeTab] = useState('success_url'); // for order: 'success_url', 'success_qr', 'error'
   const [activeStatusTab, setActiveStatusTab] = useState('status_success'); // for status check: 'status_success', 'status_pending'
@@ -230,6 +231,24 @@ function APIDocumentation() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', color: '#f8fafc', animation: 'fadeIn 0.3s ease' }}>
+      {/* Base URL Banner */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '0.75rem',
+        background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)',
+        borderRadius: '8px', padding: '0.65rem 1rem'
+      }}>
+        <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Base URL</span>
+        <span style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: '#e0e7ff', fontWeight: '600', flexGrow: 1 }}>{apiBase}</span>
+        <button
+          onClick={() => handleCopy(apiBase, 'base')}
+          className="tab-btn"
+          style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', minHeight: 'auto', gap: '0.25rem', whiteSpace: 'nowrap' }}
+        >
+          {copiedText === 'base' ? <Check size={11} style={{ color: '#10b981' }} /> : <Copy size={11} />}
+          {copiedText === 'base' ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+
       {/* API Endpoint Toggle Tabs */}
       <div style={{ display: 'flex', gap: '0.35rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.5rem' }}>
         <button
@@ -267,7 +286,7 @@ function APIDocumentation() {
               <span style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: '600' }}>/api/orders</span>
               
               <button
-                onClick={() => handleCopy('http://localhost:8000/api/orders', 'url')}
+                onClick={() => handleCopy(`${apiBase}/api/orders`, 'url')}
                 className="tab-btn"
                 style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', marginLeft: 'auto', minHeight: 'auto', gap: '0.3rem' }}
               >
@@ -445,7 +464,7 @@ function APIDocumentation() {
               <span style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: '600' }}>/api/transactions/{"{transaction_id}"}</span>
               
               <button
-                onClick={() => handleCopy('http://localhost:8000/api/transactions/{transaction_id}', 'url')}
+                onClick={() => handleCopy(`${apiBase}/api/transactions/{transaction_id}`, 'url')}
                 className="tab-btn"
                 style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', marginLeft: 'auto', minHeight: 'auto', gap: '0.3rem' }}
               >
