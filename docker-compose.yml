@@ -31,6 +31,7 @@ services:
       - ./backend:/app
     environment:
       - DATABASE_URL=postgresql://gateway_user:gateway_password@db:5432/gateway_router
+      - FRONTEND_BASE_URL=https://grdash.pay2mall.com
     depends_on:
       db:
         condition: service_healthy
@@ -47,7 +48,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - VITE_API_BASE_URL=http://localhost:8000
+      - VITE_API_BASE_URL=https://grapi.pay2mall.com
     depends_on:
       - backend
 

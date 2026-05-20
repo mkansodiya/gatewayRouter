@@ -8,14 +8,13 @@ import CheckoutForm from './components/CheckoutForm';
 import TransactionTable from './components/TransactionTable';
 import AdminLogin from './components/AdminLogin';
 import AdminPanel from './components/AdminPanel';
-import PublicPayment from './components/PublicPayment';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [gateways, setGateways] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [routerStatus, setRouterStatus] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(isAdminLoggedIn());
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [adminAuthenticated, setAdminAuthenticated] = useState(isAdminLoggedIn());
@@ -42,10 +41,13 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadData();
-    const interval = setInterval(() => loadData(false), 8000);
-    return () => clearInterval(interval);
-  }, []);
+    if (adminAuthenticated) {
+      setLoading(true);
+      loadData();
+      const interval = setInterval(() => loadData(false), 8000);
+      return () => clearInterval(interval);
+    }
+  }, [adminAuthenticated]);
 
   const handleToggleActive = async (gatewayId, isActive) => {
     try {
@@ -92,12 +94,6 @@ export default function App() {
     );
   }
 
-  // ── Unified Public Payment Route (Bypass Admin) ────────────────────────────
-  const currentPath = window.location.pathname;
-  if (currentPath.startsWith('/pay/')) {
-    const transactionId = currentPath.split('/pay/')[1];
-    return <PublicPayment transactionId={transactionId} />;
-  }
 
   // ── Full-screen login gate ─────────────────────────────────────────────────
   if (!adminAuthenticated) {

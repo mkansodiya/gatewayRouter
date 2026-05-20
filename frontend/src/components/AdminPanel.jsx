@@ -156,7 +156,7 @@ function GatewayAdminRow({ gateway, onUpdated, onError }) {
 }
 
 function APIDocumentation() {
-  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+  const apiBase = import.meta.env.VITE_API_BASE_URL;
   const [apiEndpoint, setApiEndpoint] = useState('create_order'); // 'create_order' or 'status_check'
   const [activeCodeTab, setActiveCodeTab] = useState('success_url'); // for order: 'success_url', 'success_qr', 'error'
   const [activeStatusTab, setActiveStatusTab] = useState('status_success'); // for status check: 'status_success', 'status_pending'

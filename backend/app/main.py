@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 import time
 import hashlib
+import jwt
+from datetime import datetime, timedelta, timezone
 
 from app.config import settings
 from app.database import engine, Base, get_db
@@ -33,18 +35,35 @@ app.add_middleware(
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
-def verify_admin_token(authorization: Optional[str] = Header(None)):
+def create_jwt_token(username: str) -> str:
+    """Issue a signed HS256 JWT with an expiry."""
+    expire = datetime.now(timezone.utc) + timedelta(hours=settings.JWT_EXPIRE_HOURS)
+    payload = {"sub": username, "exp": expire}
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+
+def verify_admin_token(authorization: Optional[str] = Header(None)) -> str:
+    """FastAPI dependency — validates the JWT and returns the subject (username)."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or malformed administrative credentials."
+            detail="Missing or malformed Authorization header.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    token = authorization.split(" ")[1]
-    expected_token = f"admin-session-{hashlib.sha256(b'admin').hexdigest()[:16]}"
-    if token != expected_token:
+    token = authorization.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        return payload.get("sub", "")
+    except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired administrative credentials."
+            detail="Token has expired. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token. Authentication failed.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
 @app.on_event("startup")
@@ -138,10 +157,8 @@ def create_order(payload: OrderCreateRequest, db: Session = Depends(get_db)):
             
         formatted_amount = f"{transaction.amount:.2f}"
         
-        # Generate the unified frontend checkout URL
-        # For a real system, you'd pull the BASE_URL from env vars
-        frontend_base_url = "http://localhost:5173"
-        unified_payment_url = f"{frontend_base_url}/pay/{transaction.id}"
+        # Generate the unified frontend checkout URL from env config
+        unified_payment_url = f"{settings.FRONTEND_BASE_URL}/pay/{transaction.id}"
 
         response_data = OrderResponseData(
             transactionId=transaction.id,
@@ -165,7 +182,7 @@ def create_order(payload: OrderCreateRequest, db: Session = Depends(get_db)):
         )
 
 @app.get("/api/gateways", response_model=List[GatewayResponse])
-def get_gateways(db: Session = Depends(get_db)):
+def get_gateways(db: Session = Depends(get_db), _ = Depends(verify_admin_token)):
     """
     Get all payment gateways with their database status and configuration.
     """
@@ -175,13 +192,16 @@ def get_gateways(db: Session = Depends(get_db)):
 @app.post("/api/admin/login", response_model=AdminLoginResponse)
 def admin_login(payload: AdminLoginRequest, db: Session = Depends(get_db)):
     hashed = hash_password(payload.password)
-    admin = db.query(Admin).filter(Admin.username == payload.username, Admin.hashed_password == hashed).first()
+    admin = db.query(Admin).filter(
+        Admin.username == payload.username,
+        Admin.hashed_password == hashed
+    ).first()
     if not admin:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid admin username or password."
         )
-    token = f"admin-session-{hashlib.sha256(payload.username.encode()).hexdigest()[:16]}"
+    token = create_jwt_token(admin.username)
     return AdminLoginResponse(status="success", token=token)
 
 @app.patch("/api/gateways/{gateway_id}", response_model=GatewayResponse)
@@ -219,7 +239,7 @@ def update_gateway(
     return db_gateway
 
 @app.get("/api/transactions", response_model=List[TransactionResponse])
-def get_transactions(db: Session = Depends(get_db)):
+def get_transactions(db: Session = Depends(get_db), _ = Depends(verify_admin_token)):
     """
     Retrieve transaction history logs.
     """
@@ -230,6 +250,8 @@ def get_transactions(db: Session = Depends(get_db)):
 def get_transaction(transaction_id: str, db: Session = Depends(get_db)):
     """
     Publicly accessible endpoint to fetch transaction details for the payment page.
+    If the transaction is still pending, attempts a live status check via the
+    provider's query API (if supported). Updates the DB and returns fresh status.
     """
     transaction = db.query(Transaction).filter(Transaction.id == transaction_id).first()
     if not transaction:
@@ -237,10 +259,43 @@ def get_transaction(transaction_id: str, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Transaction not found."
         )
+
+    # ── Live status check for pending transactions ─────────────────────────────
+    if transaction.status == "pending" and transaction.gateway_id:
+        try:
+            provider = registry.get(transaction.gateway_id)
+            if provider and hasattr(provider, "query_payment"):
+                # Load gateway config from DB
+                db_gateway = db.query(GatewayConfig).filter(
+                    GatewayConfig.id == transaction.gateway_id
+                ).first()
+                if db_gateway and db_gateway.config_data:
+                    result = provider.query_payment(
+                        transaction.reference_id,
+                        db_gateway.config_data
+                    )
+                    print(f"Status check [{transaction.gateway_id}] tx={transaction_id}: {result}")
+                    # LGPay: status=1 means paid
+                    if result.get("status") == 1:
+                        data = result.get("data", {})
+                        transaction.status = "success"
+                        transaction.error_message = None
+                        transaction.utr = (
+                            data.get("trade_no")
+                            or data.get("order_sn")
+                            or transaction.reference_id
+                        )
+                        db.commit()
+                        db.refresh(transaction)
+        except Exception as e:
+            # Non-fatal — log and return current DB state
+            print(f"Status check failed for {transaction_id}: {e}")
+
     return transaction
 
+
 @app.get("/api/router/status")
-def get_router_status(db: Session = Depends(get_db)):
+def get_router_status(db: Session = Depends(get_db), _ = Depends(verify_admin_token)):
     """
     Fetch the router state, active queue, and next gateway up.
     """
