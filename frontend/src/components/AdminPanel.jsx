@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, ToggleLeft, ToggleRight, Settings, Check, Save, AlertTriangle, ArrowUp, LogOut } from 'lucide-react';
+import { ShieldCheck, ToggleLeft, ToggleRight, Settings, Check, Save, AlertTriangle, ArrowUp, LogOut, BookOpen, Copy, Code } from 'lucide-react';
 import { fetchGateways, updateGateway, isAdminLoggedIn, clearAdminToken } from '../api';
 
 function GatewayAdminRow({ gateway, onUpdated, onError }) {
@@ -155,10 +155,233 @@ function GatewayAdminRow({ gateway, onUpdated, onError }) {
   );
 }
 
+function APIDocumentation() {
+  const [activeCodeTab, setActiveCodeTab] = useState('success_url'); // 'success_url', 'success_qr', 'error'
+  const [copiedText, setCopiedText] = useState(null);
+
+  const handleCopy = (text, type) => {
+    navigator.clipboard.writeText(text);
+    setCopiedText(type);
+    setTimeout(() => setCopiedText(null), 2000);
+  };
+
+  const requestJSON = `{
+  "amount": 100.00,
+  "referenceId": "ref_849204",
+  "description": "Order Payment #123",
+  "redirectUrl": "https://your-site.com/callback"
+}`;
+
+  const successUrlJSON = `{
+  "status": "success",
+  "data": {
+    "transactionId": "TXN8B6A40D62B3A",
+    "referenceId": "ORD0D64DB1177A4",
+    "amount": 100.0,
+    "paymentUrl": "http://localhost:5173/pay/TXN8B6A40D62B3A"
+  }
+}`;
+
+  const successQrJSON = `{
+  "status": "success",
+  "data": {
+    "transactionId": "TXNCC358A9F0B2A",
+    "referenceId": "ref_125564",
+    "amount": 100.0,
+    "qr_string": "upi://pay?pa=test@okpay&pn=Merchant&am=100.00&tr=ref_125564"
+  }
+}`;
+
+  const errorJSON = `{
+  "detail": "Payment failed: JazPays Error: Invalid merchant credentials"
+}`;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', color: '#f8fafc', animation: 'fadeIn 0.3s ease' }}>
+      {/* Endpoint summary */}
+      <div className="card-glass" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <span style={{
+            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            color: 'white',
+            fontWeight: '800',
+            fontSize: '0.8rem',
+            padding: '0.3rem 0.6rem',
+            borderRadius: '6px',
+            textTransform: 'uppercase'
+          }}>POST</span>
+          <span style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: '600' }}>/api/orders</span>
+          
+          <button
+            onClick={() => handleCopy('http://localhost:8000/api/orders', 'url')}
+            className="tab-btn"
+            style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', marginLeft: 'auto', minHeight: 'auto', gap: '0.3rem' }}
+          >
+            {copiedText === 'url' ? <Check size={12} style={{ color: '#10b981' }} /> : <Copy size={12} />}
+            {copiedText === 'url' ? 'Copied' : 'Copy Endpoint'}
+          </button>
+        </div>
+        <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+          Initiates a checkout transaction. The request is routed via round-robin distribution to the next active provider in the queue.
+        </p>
+      </div>
+
+      {/* Main Grid: Request params and Examples */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', alignItems: 'start' }}>
+        {/* Left column: Request Body fields */}
+        <div className="card-glass" style={{ padding: '1.25rem' }}>
+          <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-primary)' }}>
+            <Code size={16} /> Request Body Fields
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            
+            <div style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '0.85rem' }}>amount</span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--color-warning)', fontWeight: 'bold' }}>float · required</span>
+              </div>
+              <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                The payment value in Rupees (₹). Must be greater than 0.
+              </p>
+            </div>
+
+            <div style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '0.85rem' }}>referenceId</span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--color-warning)', fontWeight: 'bold' }}>string · required</span>
+              </div>
+              <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                A unique ID from your system representing the order/invoice.
+              </p>
+            </div>
+
+            <div style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '0.85rem' }}>redirectUrl</span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--color-warning)', fontWeight: 'bold' }}>string · required</span>
+              </div>
+              <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                Callback URL where customers redirect after payment completion on the gateway.
+              </p>
+            </div>
+
+            <div style={{ paddingBottom: '0.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '0.85rem' }}>description</span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>string · optional</span>
+              </div>
+              <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                A brief description of the billing items or transaction.
+              </p>
+            </div>
+
+          </div>
+        </div>
+
+        {/* Right column: Request/Response Examples */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* Request Body JSON */}
+          <div className="card-glass" style={{ padding: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <h4 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Example JSON Request</h4>
+              <button
+                onClick={() => handleCopy(requestJSON, 'req')}
+                className="tab-btn"
+                style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', minHeight: 'auto', gap: '0.3rem' }}
+              >
+                {copiedText === 'req' ? <Check size={11} style={{ color: '#10b981' }} /> : <Copy size={11} />}
+                {copiedText === 'req' ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            <pre style={{
+              margin: 0, padding: '1rem', background: 'rgba(0,0,0,0.25)',
+              borderRadius: '6px', border: '1px solid var(--glass-border)',
+              fontFamily: 'monospace', fontSize: '0.8rem', color: '#a5f3fc',
+              overflowX: 'auto'
+            }}>{requestJSON}</pre>
+          </div>
+
+          {/* Response Bodies JSON */}
+          <div className="card-glass" style={{ padding: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <h4 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Responses</h4>
+              <div style={{ display: 'flex', gap: '0.35rem' }}>
+                <button
+                  onClick={() => setActiveCodeTab('success_url')}
+                  className={`tab-btn ${activeCodeTab === 'success_url' ? 'active' : ''}`}
+                  style={{ padding: '0.15rem 0.45rem', fontSize: '0.7rem', minHeight: 'auto' }}
+                >
+                  201 Redirect
+                </button>
+                <button
+                  onClick={() => setActiveCodeTab('success_qr')}
+                  className={`tab-btn ${activeCodeTab === 'success_qr' ? 'active' : ''}`}
+                  style={{ padding: '0.15rem 0.45rem', fontSize: '0.7rem', minHeight: 'auto' }}
+                >
+                  201 QR Code
+                </button>
+                <button
+                  onClick={() => setActiveCodeTab('error')}
+                  className={`tab-btn ${activeCodeTab === 'error' ? 'active' : ''}`}
+                  style={{ padding: '0.15rem 0.45rem', fontSize: '0.7rem', minHeight: 'auto' }}
+                >
+                  400/503 Error
+                </button>
+              </div>
+            </div>
+
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => {
+                  const target = activeCodeTab === 'success_url' ? successUrlJSON : (activeCodeTab === 'success_qr' ? successQrJSON : errorJSON);
+                  handleCopy(target, 'res');
+                }}
+                className="tab-btn"
+                style={{ position: 'absolute', right: '10px', top: '10px', padding: '0.2rem 0.5rem', fontSize: '0.7rem', minHeight: 'auto', zIndex: 5, gap: '0.3rem' }}
+              >
+                {copiedText === 'res' ? <Check size={11} style={{ color: '#10b981' }} /> : <Copy size={11} />}
+                {copiedText === 'res' ? 'Copied' : 'Copy'}
+              </button>
+              
+              {activeCodeTab === 'success_url' && (
+                <pre style={{
+                  margin: 0, padding: '1.25rem 1rem 1rem', background: 'rgba(0,0,0,0.25)',
+                  borderRadius: '6px', border: '1px solid var(--glass-border)',
+                  fontFamily: 'monospace', fontSize: '0.8rem', color: '#86efac',
+                  overflowX: 'auto'
+                }}>{successUrlJSON}</pre>
+              )}
+
+              {activeCodeTab === 'success_qr' && (
+                <pre style={{
+                  margin: 0, padding: '1.25rem 1rem 1rem', background: 'rgba(0,0,0,0.25)',
+                  borderRadius: '6px', border: '1px solid var(--glass-border)',
+                  fontFamily: 'monospace', fontSize: '0.8rem', color: '#86efac',
+                  overflowX: 'auto'
+                }}>{successQrJSON}</pre>
+              )}
+
+              {activeCodeTab === 'error' && (
+                <pre style={{
+                  margin: 0, padding: '1.25rem 1rem 1rem', background: 'rgba(0,0,0,0.25)',
+                  borderRadius: '6px', border: '1px solid var(--glass-border)',
+                  fontFamily: 'monospace', fontSize: '0.8rem', color: '#fca5a5',
+                  overflowX: 'auto'
+                }}>{errorJSON}</pre>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPanel({ token, onLogout }) {
   const [gateways, setGateways] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorBanner, setErrorBanner] = useState(null);
+  const [activeSubTab, setActiveSubTab] = useState('gateways'); // 'gateways' or 'docs'
 
   const loadGateways = async () => {
     try {
@@ -212,6 +435,24 @@ export default function AdminPanel({ token, onLogout }) {
         </button>
       </div>
 
+      {/* Admin Panel Sub Tabs */}
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem' }}>
+        <button
+          onClick={() => setActiveSubTab('gateways')}
+          className={`tab-btn ${activeSubTab === 'gateways' ? 'active' : ''}`}
+          style={{ minHeight: 'auto', padding: '0.45rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+        >
+          <Settings size={14} /> Gateways Config
+        </button>
+        <button
+          onClick={() => setActiveSubTab('docs')}
+          className={`tab-btn ${activeSubTab === 'docs' ? 'active' : ''}`}
+          style={{ minHeight: 'auto', padding: '0.45rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+        >
+          <BookOpen size={14} /> API Docs
+        </button>
+      </div>
+
       {/* Error banner */}
       {errorBanner && (
         <div style={{
@@ -227,46 +468,52 @@ export default function AdminPanel({ token, onLogout }) {
         </div>
       )}
 
-      {/* Info strip */}
-      <div style={{
-        padding: '0.75rem 1rem',
-        background: 'rgba(99,102,241,0.08)',
-        border: '1px solid rgba(99,102,241,0.2)',
-        borderRadius: '8px',
-        marginBottom: '1.5rem',
-        fontSize: '0.8rem',
-        color: 'var(--text-secondary)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.6rem'
-      }}>
-        <ShieldCheck size={14} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
-        Changes to credentials and status are applied immediately. The round-robin router respects active/inactive toggles in real-time.
-      </div>
+      {activeSubTab === 'gateways' ? (
+        <>
+          {/* Info strip */}
+          <div style={{
+            padding: '0.75rem 1rem',
+            background: 'rgba(99,102,241,0.08)',
+            border: '1px solid rgba(99,102,241,0.2)',
+            borderRadius: '8px',
+            marginBottom: '1.5rem',
+            fontSize: '0.8rem',
+            color: 'var(--text-secondary)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.6rem'
+          }}>
+            <ShieldCheck size={14} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+            Changes to credentials and status are applied immediately. The round-robin router respects active/inactive toggles in real-time.
+          </div>
 
-      {/* Gateway list */}
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-          <div className="spinner" style={{ width: '32px', height: '32px', margin: '0 auto 1rem', borderTopColor: 'var(--color-primary)' }}></div>
-          Loading gateway configurations...
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {gateways.length === 0 ? (
+          {/* Gateway list */}
+          {loading ? (
             <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-              No payment gateways discovered. Check provider directory.
+              <div className="spinner" style={{ width: '32px', height: '32px', margin: '0 auto 1rem', borderTopColor: 'var(--color-primary)' }}></div>
+              Loading gateway configurations...
             </div>
           ) : (
-            gateways.map(gw => (
-              <GatewayAdminRow
-                key={gw.id}
-                gateway={gw}
-                onUpdated={loadGateways}
-                onError={(msg) => setErrorBanner(msg)}
-              />
-            ))
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {gateways.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  No payment gateways discovered. Check provider directory.
+                </div>
+              ) : (
+                gateways.map(gw => (
+                  <GatewayAdminRow
+                    key={gw.id}
+                    gateway={gw}
+                    onUpdated={loadGateways}
+                    onError={(msg) => setErrorBanner(msg)}
+                  />
+                ))
+              )}
+            </div>
           )}
-        </div>
+        </>
+      ) : (
+        <APIDocumentation />
       )}
     </div>
   );
