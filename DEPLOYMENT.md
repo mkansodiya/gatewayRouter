@@ -97,6 +97,29 @@ After deploying the application, you need to configure the following webhook URL
 - **Method:** `POST`
 - **Payload Format:** JSON or Form-encoded data
 
+## Step 7: Real API Credentials
+
+For testing and reference, the following real API credentials are included in the initial database dump (`db/backup.sql`). You can configure these in the Admin Panel or keep them as reference:
+
+### 1. OkPay
+- **Merchant ID (`mch_id`)**: `1000`
+- **MD5 Secret Key (`key`)**: `eb6080dbc8dc429ab86a1cd1c337975d`
+- **API Host URL (`host`)**: `https://sandbox.wpay.one`
+
+### 2. IMB
+- **API Key (`api_key`)**: `041c5d3eb80b70cd5cd6ef96c7bcb54b`
+- **Host URL (`host_url`)**: `https://secure-stage.imb.org.in/api/create-order`
+
+### 3. LGPay
+- **App ID (`app_id`)**: `YD5094`
+- **Merchant Key (`key`)**: `uWqMeuvOwTo15FduVGoRULqx8KIFv0lQ`
+- **Trade Type (`trade_type`)**: `INRUPI`
+- **Exchange Rate (`exchange_rate`)**: `1`
+
+### 4. JazPays
+- **Merchant ID (`merchant_id`)**: `100222036`
+- **API Key (`api_key`)**: `741d5341913113809157917fa9c12044`
+
 ## Useful Commands
 
 - **View Logs**:
