@@ -32,6 +32,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://gateway_user:gateway_password@db:5432/gateway_router
       - FRONTEND_BASE_URL=https://grdash.pay2mall.com
+      - PYTHONUNBUFFERED=1
     depends_on:
       db:
         condition: service_healthy

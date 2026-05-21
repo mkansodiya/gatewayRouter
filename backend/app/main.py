@@ -401,80 +401,91 @@ async def okpay_webhook(request: Request, db: Session = Depends(get_db)):
     import json
 
     # ── Log everything for analysis ───────────────────────────────────────────
-    client_ip   = request.client.host if request.client else "unknown"
-    timestamp   = datetime.now(timezone.utc).isoformat()
-    headers_log = dict(request.headers)
+    client_ip    = request.client.host if request.client else "unknown"
+    timestamp    = datetime.now(timezone.utc).isoformat()
+    content_type = request.headers.get("content-type", "")
+    headers_log  = dict(request.headers)
 
-    print(f"\n{'='*60}")
-    print(f"[OKPAY-WEBHOOK] ▶ Incoming request at {timestamp}")
-    print(f"[OKPAY-WEBHOOK] Client IP : {client_ip}")
-    print(f"[OKPAY-WEBHOOK] Method    : {request.method}")
-    print(f"[OKPAY-WEBHOOK] URL       : {request.url}")
-    print(f"[OKPAY-WEBHOOK] Headers   :")
+    print(f"\n{'='*60}", flush=True)
+    print(f"[OKPAY-WEBHOOK] ▶ Incoming request at {timestamp}", flush=True)
+    print(f"[OKPAY-WEBHOOK] Client IP    : {client_ip}", flush=True)
+    print(f"[OKPAY-WEBHOOK] Method       : {request.method}", flush=True)
+    print(f"[OKPAY-WEBHOOK] URL          : {request.url}", flush=True)
+    print(f"[OKPAY-WEBHOOK] Content-Type : {content_type}", flush=True)
+    print(f"[OKPAY-WEBHOOK] Headers      :", flush=True)
     for k, v in headers_log.items():
-        print(f"                  {k}: {v}")
+        print(f"                  {k}: {v}", flush=True)
 
-    # Read form first (single read — body stream consumed here)
-    form = await request.form()
-    data = dict(form)
-    print(f"[OKPAY-WEBHOOK] Payload   : {json.dumps(data, ensure_ascii=False)}")
+    # Dynamic JSON or Form data parsing
+    if "application/json" in content_type:
+        try:
+            data = await request.json()
+            print(f"[OKPAY-WEBHOOK] Payload (JSON): {json.dumps(data, ensure_ascii=False)}", flush=True)
+        except ValueError:
+            print(f"[OKPAY-WEBHOOK] ❌ Invalid JSON body — rejecting", flush=True)
+            print(f"{'='*60}\n", flush=True)
+            return PlainTextResponse("error", status_code=400)
+    else:
+        form = await request.form()
+        data = dict(form)
+        print(f"[OKPAY-WEBHOOK] Payload (form): {json.dumps(data, ensure_ascii=False)}", flush=True)
 
     incoming_sign = data.pop("sign", "")
-    print(f"[OKPAY-WEBHOOK] Incoming sign : {incoming_sign}")
+    print(f"[OKPAY-WEBHOOK] Incoming sign : {incoming_sign}", flush=True)
 
     # Look up OkPay config to get the signing key
     db_gateway = db.query(GatewayConfig).filter(GatewayConfig.id == "okpay").first()
     if not db_gateway:
-        print(f"[OKPAY-WEBHOOK] ❌ OkPay gateway config not found in DB — rejecting")
-        print(f"{'='*60}\n")
+        print(f"[OKPAY-WEBHOOK] ❌ OkPay gateway config not found in DB — rejecting", flush=True)
+        print(f"{'='*60}\n", flush=True)
         return PlainTextResponse("error")
 
     mch_key = db_gateway.config_data.get("key", "")
     computed_sign = OkPayGateway._generate_sign(data, mch_key)
-    print(f"[OKPAY-WEBHOOK] Computed sign : {computed_sign}")
+    print(f"[OKPAY-WEBHOOK] Computed sign : {computed_sign}", flush=True)
 
     if incoming_sign.lower() != computed_sign:
-        print(f"[OKPAY-WEBHOOK] ❌ Signature MISMATCH — got={incoming_sign}, expected={computed_sign}")
-        print(f"{'='*60}\n")
+        print(f"[OKPAY-WEBHOOK] ❌ Signature MISMATCH — got={incoming_sign}, expected={computed_sign}", flush=True)
+        print(f"{'='*60}\n", flush=True)
         return PlainTextResponse("error")
 
-    print(f"[OKPAY-WEBHOOK] ✅ Signature verified")
+    print(f"[OKPAY-WEBHOOK] ✅ Signature verified", flush=True)
 
     out_trade_no = data.get("out_trade_no", "")
     status_val   = int(data.get("status", 0))
     trade_no     = data.get("trade_no", "")
-    print(f"[OKPAY-WEBHOOK] out_trade_no : {out_trade_no}")
-    print(f"[OKPAY-WEBHOOK] status       : {status_val}")
-    print(f"[OKPAY-WEBHOOK] trade_no     : {trade_no}")
+    print(f"[OKPAY-WEBHOOK] out_trade_no : {out_trade_no}", flush=True)
+    print(f"[OKPAY-WEBHOOK] status       : {status_val}", flush=True)
+    print(f"[OKPAY-WEBHOOK] trade_no     : {trade_no}", flush=True)
 
     if not out_trade_no:
-        print(f"[OKPAY-WEBHOOK] ❌ Missing out_trade_no — rejecting")
-        print(f"{'='*60}\n")
+        print(f"[OKPAY-WEBHOOK] ❌ Missing out_trade_no — rejecting", flush=True)
+        print(f"{'='*60}\n", flush=True)
         return PlainTextResponse("error")
 
     if status_val != 1:
-        print(f"[OKPAY-WEBHOOK] ⚠️  status={status_val} (not 1) — acknowledging but NOT marking success")
-        print(f"{'='*60}\n")
+        print(f"[OKPAY-WEBHOOK] ⚠️  status={status_val} (not 1) — acknowledging but NOT marking success", flush=True)
+        print(f"{'='*60}\n", flush=True)
         return PlainTextResponse("error")
 
     # Find the transaction by reference_id
     tx = db.query(Transaction).filter(Transaction.reference_id == out_trade_no).first()
     if not tx:
-        print(f"[OKPAY-WEBHOOK] ⚠️  No transaction found for out_trade_no={out_trade_no}")
-        print(f"{'='*60}\n")
+        print(f"[OKPAY-WEBHOOK] ⚠️  No transaction found for out_trade_no={out_trade_no}", flush=True)
+        print(f"{'='*60}\n", flush=True)
         return PlainTextResponse("success")
 
     if tx.status == "success":
-        print(f"[OKPAY-WEBHOOK] ℹ️  Transaction {out_trade_no} already SUCCESS — duplicate callback")
-        print(f"{'='*60}\n")
+        print(f"[OKPAY-WEBHOOK] ℹ️  Transaction {out_trade_no} already SUCCESS — duplicate callback", flush=True)
+        print(f"{'='*60}\n", flush=True)
         return PlainTextResponse("success")
 
     tx.status = "success"
     tx.error_message = None
     tx.utr = trade_no or out_trade_no
     db.commit()
-    print(f"[OKPAY-WEBHOOK] ✅ Transaction {out_trade_no} marked as SUCCESS (utr={tx.utr})")
-    print(f"{'='*60}\n")
+    print(f"[OKPAY-WEBHOOK] ✅ Transaction {out_trade_no} marked as SUCCESS (utr={tx.utr})", flush=True)
+    print(f"{'='*60}\n", flush=True)
 
     return PlainTextResponse("success")
 
