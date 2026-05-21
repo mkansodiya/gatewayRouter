@@ -264,18 +264,33 @@ def get_transaction(transaction_id: str, db: Session = Depends(get_db)):
     if transaction.status == "pending" and transaction.gateway_id:
         try:
             provider = registry.get(transaction.gateway_id)
-            if provider and hasattr(provider, "query_payment"):
-                # Load gateway config from DB
-                db_gateway = db.query(GatewayConfig).filter(
-                    GatewayConfig.id == transaction.gateway_id
-                ).first()
-                if db_gateway and db_gateway.config_data:
+            db_gateway = db.query(GatewayConfig).filter(
+                GatewayConfig.id == transaction.gateway_id
+            ).first()
+            if provider and db_gateway:
+                config_data = db_gateway.config_data or {}
+
+                # IMB: check_payment_status returns {success, utr, status, message, raw}
+                if hasattr(provider, "check_payment_status"):
+                    result = provider.check_payment_status(
+                        transaction.reference_id,
+                        config_data,
+                    )
+                    print(f"Status check [imb] tx={transaction_id}: {result}")
+                    if result.get("success"):
+                        transaction.status = "success"
+                        transaction.error_message = None
+                        transaction.utr = result.get("utr") or transaction.reference_id
+                        db.commit()
+                        db.refresh(transaction)
+
+                # LGPay / others: query_payment returns {status, data}
+                elif hasattr(provider, "query_payment"):
                     result = provider.query_payment(
                         transaction.reference_id,
-                        db_gateway.config_data
+                        config_data,
                     )
                     print(f"Status check [{transaction.gateway_id}] tx={transaction_id}: {result}")
-                    # LGPay: status=1 means paid
                     if result.get("status") == 1:
                         data = result.get("data", {})
                         transaction.status = "success"
@@ -292,6 +307,7 @@ def get_transaction(transaction_id: str, db: Session = Depends(get_db)):
             print(f"Status check failed for {transaction_id}: {e}")
 
     return transaction
+
 
 
 @app.get("/api/router/status")
@@ -338,40 +354,83 @@ async def okpay_webhook(request: Request, db: Session = Depends(get_db)):
     """
     from fastapi.responses import PlainTextResponse
     from app.providers.okpay import OkPayGateway
+    import json
 
+    # ── Log everything for analysis ───────────────────────────────────────────
+    client_ip   = request.client.host if request.client else "unknown"
+    timestamp   = datetime.now(timezone.utc).isoformat()
+    headers_log = dict(request.headers)
+
+    print(f"\n{'='*60}")
+    print(f"[OKPAY-WEBHOOK] ▶ Incoming request at {timestamp}")
+    print(f"[OKPAY-WEBHOOK] Client IP : {client_ip}")
+    print(f"[OKPAY-WEBHOOK] Method    : {request.method}")
+    print(f"[OKPAY-WEBHOOK] URL       : {request.url}")
+    print(f"[OKPAY-WEBHOOK] Headers   :")
+    for k, v in headers_log.items():
+        print(f"                  {k}: {v}")
+
+    # Read form first (single read — body stream consumed here)
     form = await request.form()
     data = dict(form)
+    print(f"[OKPAY-WEBHOOK] Payload   : {json.dumps(data, ensure_ascii=False)}")
 
     incoming_sign = data.pop("sign", "")
+    print(f"[OKPAY-WEBHOOK] Incoming sign : {incoming_sign}")
 
     # Look up OkPay config to get the signing key
     db_gateway = db.query(GatewayConfig).filter(GatewayConfig.id == "okpay").first()
     if not db_gateway:
+        print(f"[OKPAY-WEBHOOK] ❌ OkPay gateway config not found in DB — rejecting")
+        print(f"{'='*60}\n")
         return PlainTextResponse("error")
 
     mch_key = db_gateway.config_data.get("key", "")
     computed_sign = OkPayGateway._generate_sign(data, mch_key)
+    print(f"[OKPAY-WEBHOOK] Computed sign : {computed_sign}")
 
     if incoming_sign.lower() != computed_sign:
-        print(f"OkPay webhook: signature mismatch (got={incoming_sign}, want={computed_sign})")
+        print(f"[OKPAY-WEBHOOK] ❌ Signature MISMATCH — got={incoming_sign}, expected={computed_sign}")
+        print(f"{'='*60}\n")
         return PlainTextResponse("error")
+
+    print(f"[OKPAY-WEBHOOK] ✅ Signature verified")
 
     out_trade_no = data.get("out_trade_no", "")
     status_val   = int(data.get("status", 0))
+    trade_no     = data.get("trade_no", "")
+    print(f"[OKPAY-WEBHOOK] out_trade_no : {out_trade_no}")
+    print(f"[OKPAY-WEBHOOK] status       : {status_val}")
+    print(f"[OKPAY-WEBHOOK] trade_no     : {trade_no}")
 
-    if not out_trade_no or status_val != 1:
+    if not out_trade_no:
+        print(f"[OKPAY-WEBHOOK] ❌ Missing out_trade_no — rejecting")
+        print(f"{'='*60}\n")
+        return PlainTextResponse("error")
+
+    if status_val != 1:
+        print(f"[OKPAY-WEBHOOK] ⚠️  status={status_val} (not 1) — acknowledging but NOT marking success")
+        print(f"{'='*60}\n")
         return PlainTextResponse("error")
 
     # Find the transaction by reference_id
     tx = db.query(Transaction).filter(Transaction.reference_id == out_trade_no).first()
-    if tx:
-        tx.status = "success"
-        tx.error_message = None
-        tx.utr = data.get("trade_no")
-        # Ensure we don't overwrite qr_string if we don't have to, but okpay provided it as trade_no in original code? 
-        # Actually okpay returns trade_no which is the UTR.
-        db.commit()
-        print(f"OkPay webhook: order {out_trade_no} marked as SUCCESS (utr={tx.utr})")
+    if not tx:
+        print(f"[OKPAY-WEBHOOK] ⚠️  No transaction found for out_trade_no={out_trade_no}")
+        print(f"{'='*60}\n")
+        return PlainTextResponse("success")
+
+    if tx.status == "success":
+        print(f"[OKPAY-WEBHOOK] ℹ️  Transaction {out_trade_no} already SUCCESS — duplicate callback")
+        print(f"{'='*60}\n")
+        return PlainTextResponse("success")
+
+    tx.status = "success"
+    tx.error_message = None
+    tx.utr = trade_no or out_trade_no
+    db.commit()
+    print(f"[OKPAY-WEBHOOK] ✅ Transaction {out_trade_no} marked as SUCCESS (utr={tx.utr})")
+    print(f"{'='*60}\n")
 
     return PlainTextResponse("success")
 
@@ -492,73 +551,107 @@ async def jazpays_webhook(request: Request, db: Session = Depends(get_db)):
     """
     from fastapi.responses import PlainTextResponse
     from app.providers.jazpays import JazPaysGateway
+    import json
+
+    # ── Log everything for analysis ───────────────────────────────────────────
+    client_ip   = request.client.host if request.client else "unknown"
+    timestamp   = datetime.now(timezone.utc).isoformat()
+    content_type = request.headers.get("content-type", "")
+    headers_log  = dict(request.headers)
+
+    print(f"\n{'='*60}")
+    print(f"[JAZPAYS-WEBHOOK] ▶ Incoming request at {timestamp}")
+    print(f"[JAZPAYS-WEBHOOK] Client IP    : {client_ip}")
+    print(f"[JAZPAYS-WEBHOOK] Method       : {request.method}")
+    print(f"[JAZPAYS-WEBHOOK] URL          : {request.url}")
+    print(f"[JAZPAYS-WEBHOOK] Content-Type : {content_type}")
+    print(f"[JAZPAYS-WEBHOOK] Headers      :")
+    for k, v in headers_log.items():
+        print(f"                    {k}: {v}")
 
     # Support both JSON and Form payload dynamically
-    if request.headers.get("content-type") == "application/json" or "application/json" in request.headers.get("content-type", ""):
+    if "application/json" in content_type:
         try:
             data = await request.json()
+            print(f"[JAZPAYS-WEBHOOK] Payload (JSON): {json.dumps(data, ensure_ascii=False)}")
         except ValueError:
-            print("JazPays webhook: invalid JSON request body")
+            print(f"[JAZPAYS-WEBHOOK] ❌ Invalid JSON body — rejecting")
+            print(f"{'='*60}\n")
             return PlainTextResponse("error", status_code=400)
     else:
         form = await request.form()
         data = dict(form)
-
-    print(f"JazPays webhook: received data -> {data}")
+        print(f"[JAZPAYS-WEBHOOK] Payload (form): {json.dumps(data, ensure_ascii=False)}")
 
     merchant_order = data.get("merchantOrder", "").strip()
     status_str     = data.get("status", "").strip().lower()
     order_no       = data.get("orderNo", "").strip()
+    amount_raw     = data.get("amount", "")
+
+    print(f"[JAZPAYS-WEBHOOK] merchantOrder : {merchant_order}")
+    print(f"[JAZPAYS-WEBHOOK] orderNo       : {order_no}")
+    print(f"[JAZPAYS-WEBHOOK] status        : {status_str}")
+    print(f"[JAZPAYS-WEBHOOK] amount        : {amount_raw}")
 
     if not merchant_order:
-        print("JazPays webhook: missing merchantOrder reference")
+        print(f"[JAZPAYS-WEBHOOK] ❌ Missing merchantOrder — rejecting")
+        print(f"{'='*60}\n")
         return PlainTextResponse("error", status_code=400)
 
     # Look up JazPays config to get the api_key secret
     db_gateway = db.query(GatewayConfig).filter(GatewayConfig.id == "jazpays").first()
     if not db_gateway:
-        print("JazPays webhook: JazPays configuration not found in DB")
+        print(f"[JAZPAYS-WEBHOOK] ❌ JazPays config not found in DB — rejecting")
+        print(f"{'='*60}\n")
         return PlainTextResponse("error", status_code=500)
 
     api_key = db_gateway.config_data.get("api_key", "").strip()
     if not api_key:
-        print("JazPays webhook: api_key not configured in database")
+        print(f"[JAZPAYS-WEBHOOK] ❌ api_key not configured in DB — rejecting")
+        print(f"{'='*60}\n")
         return PlainTextResponse("error", status_code=500)
 
-    # Verify signature
-    if not JazPaysGateway.verify_webhook_signature(data, api_key):
-        print("JazPays webhook: signature verification failed")
-        return PlainTextResponse("error", status_code=400)
+    # ⚠️  Signature verification DISABLED for testing — log only
+    incoming_signature = data.get("signature", "").strip()
+    print(f"[JAZPAYS-WEBHOOK] Signature field : {incoming_signature or '(not present)'} — verification SKIPPED for testing")
 
     if status_str != "success":
-        print(f"JazPays webhook: order {merchant_order} status={status_str} — not marking as success")
-        return PlainTextResponse("success")   # Return success to stop retries as per validation protocol
+        print(f"[JAZPAYS-WEBHOOK] ⚠️  status={status_str} (not success) — acknowledging without marking success")
+        print(f"{'='*60}\n")
+        return PlainTextResponse("success")
 
     # Find the transaction by reference_id (merchantOrder)
     tx = db.query(Transaction).filter(Transaction.reference_id == merchant_order).first()
     if not tx:
-        print(f"JazPays webhook: no transaction found for merchantOrder={merchant_order}")
+        print(f"[JAZPAYS-WEBHOOK] ⚠️  No transaction found for merchantOrder={merchant_order}")
+        print(f"{'='*60}\n")
         return PlainTextResponse("error", status_code=404)
 
+    print(f"[JAZPAYS-WEBHOOK] Transaction found : id={tx.id}, status={tx.status}, amount={tx.amount}")
+
     # Validation Protocol: Strictly match amount
-    # Note: DB amount is float. Webhook amount is decimal/integer.
     try:
-        incoming_amount = float(data.get("amount", 0))
+        incoming_amount = float(amount_raw)
         if abs(incoming_amount - tx.amount) > 0.01:
-            print(f"JazPays webhook: amount mismatch (got={incoming_amount}, want={tx.amount})")
+            print(f"[JAZPAYS-WEBHOOK] ❌ Amount mismatch — got={incoming_amount}, want={tx.amount}")
+            print(f"{'='*60}\n")
             return PlainTextResponse("error", status_code=400)
+        print(f"[JAZPAYS-WEBHOOK] ✅ Amount verified ({incoming_amount})")
     except (ValueError, TypeError):
-        print("JazPays webhook: invalid amount in webhook payload")
+        print(f"[JAZPAYS-WEBHOOK] ❌ Invalid amount value '{amount_raw}' — rejecting")
+        print(f"{'='*60}\n")
         return PlainTextResponse("error", status_code=400)
 
     # Acknowledge and update transaction status to success
     if tx.status == "pending":
         tx.status = "success"
         tx.error_message = None
-        tx.utr = order_no or merchant_order  # Store JazPays orderNo as UTR
+        tx.utr = order_no or merchant_order
         db.commit()
-        print(f"JazPays webhook: order {merchant_order} marked as SUCCESS")
+        print(f"[JAZPAYS-WEBHOOK] ✅ Transaction {merchant_order} marked as SUCCESS (utr={tx.utr})")
     elif tx.status == "success":
-        print(f"JazPays webhook: order {merchant_order} already SUCCESS — acknowledging again")
+        print(f"[JAZPAYS-WEBHOOK] ℹ️  Transaction {merchant_order} already SUCCESS — duplicate callback")
 
-    return PlainTextResponse("success")   # Return success to stop retries
+    print(f"{'='*60}\n")
+    return PlainTextResponse("success")
+

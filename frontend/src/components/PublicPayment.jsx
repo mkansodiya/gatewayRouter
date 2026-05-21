@@ -24,10 +24,22 @@ export default function PublicPayment({ transactionId }) {
           clearInterval(intervalRef.current);
           intervalRef.current = null;
         }
-        // If success and there's a redirect_url, redirect after 3 seconds
-        if (data.status === 'success' && data.redirect_url) {
+        // Redirect for both success and failed — append status, transaction_id, utr
+        if (data.redirect_url) {
           setTimeout(() => {
-            window.location.href = data.redirect_url;
+            let finalUrl;
+            try {
+              const url = new URL(data.redirect_url);
+              url.searchParams.set('status', data.status);
+              url.searchParams.set('transaction_id', data.id);
+              if (data.utr) url.searchParams.set('utr', data.utr);
+              finalUrl = url.toString();
+            } catch (_) {
+              // Fallback: manually append params if URL is malformed
+              const sep = data.redirect_url.includes('?') ? '&' : '?';
+              finalUrl = `${data.redirect_url}${sep}status=${encodeURIComponent(data.status)}&transaction_id=${encodeURIComponent(data.id)}${data.utr ? '&utr=' + encodeURIComponent(data.utr) : ''}`;
+            }
+            window.location.href = finalUrl;
           }, 3000);
         }
       }
