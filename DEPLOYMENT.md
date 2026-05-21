@@ -70,6 +70,33 @@ cat db/backup.sql | docker exec -i gateway_db_prod psql -U gateway_user -d gatew
 1. **Frontend Dashboard**: Access the application through your web browser at `http://<your-server-ip>:5173` (or your configured frontend domain).
 2. **Backend API**: The API should be accessible at `http://<your-server-ip>:8000`. You can also check the interactive API documentation at `http://<your-server-ip>:8000/docs`.
 
+## Step 6: Webhook Configuration
+
+After deploying the application, you need to configure the following webhook URLs in your respective payment provider dashboards. Replace `https://your-backend-domain.com` with the actual public URL of your backend (defined as `VITE_API_BASE_URL`).
+
+### 1. OkPay
+**URL:** `https://your-backend-domain.com/api/webhooks/okpay`
+- **Method:** `POST`
+- **Payload Format:** Form-encoded data
+- **Security:** Requires MD5 signature verification.
+
+### 2. IMB
+**URL:** `https://your-backend-domain.com/api/webhooks/imb`
+- **Method:** `POST`
+- **Payload Format:** Form-encoded data
+- **Security:** Token-only (no signature verification).
+
+### 3. LGPay
+**URL:** `https://your-backend-domain.com/api/webhooks/lgpay`
+- **Method:** `POST`
+- **Payload Format:** Form-encoded data
+- **Security:** Requires UPPERCASE MD5 signature verification.
+
+### 4. JazPays
+**URL:** `https://your-backend-domain.com/api/webhooks/jazpays`
+- **Method:** `POST`
+- **Payload Format:** JSON or Form-encoded data
+
 ## Useful Commands
 
 - **View Logs**:
