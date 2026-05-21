@@ -114,3 +114,24 @@ export async function createOrder(payload) {
   }
   return response.json();
 }
+
+// ── Admin update credentials (PROTECTED) ─────────────────────────────────────────
+export async function updateAdminCredentials(username, password) {
+  const body = {};
+  if (username) body.username = username;
+  if (password) body.password = password;
+
+  const response = await apiFetch(`${API_BASE_URL}/admin/credentials`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to update credentials');
+  }
+  return response.json();
+}

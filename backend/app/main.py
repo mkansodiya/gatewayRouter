@@ -13,7 +13,7 @@ from app.models import GatewayConfig, Transaction, Admin
 from app.schemas import (
     OrderCreateRequest, OrderCreateResponse, OrderResponseData,
     GatewayUpdate, GatewayResponse, TransactionResponse,
-    AdminLoginRequest, AdminLoginResponse
+    AdminLoginRequest, AdminLoginResponse, AdminUpdateRequest
 )
 from app.registry import registry
 from app.router import router_service
@@ -117,8 +117,8 @@ def startup_populate_gateways():
                 # Existing provider — always sync latest schema from code (schema is code, not data)
                 db_gateway.credentials_schema = schema
                 
-        # Seed default admin user (admin / admin123)
-        admin_exists = db.query(Admin).filter(Admin.username == "admin").first()
+        # Seed default admin user if none exists (admin / admin123)
+        admin_exists = db.query(Admin).first()
         if not admin_exists:
             new_admin = Admin(
                 username="admin",
@@ -201,6 +201,50 @@ def admin_login(payload: AdminLoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid admin username or password."
         )
+    token = create_jwt_token(admin.username)
+    return AdminLoginResponse(status="success", token=token)
+
+@app.patch("/api/admin/credentials", response_model=AdminLoginResponse)
+def update_admin_credentials(
+    payload: AdminUpdateRequest,
+    db: Session = Depends(get_db),
+    current_username: str = Depends(verify_admin_token)
+):
+    admin = db.query(Admin).filter(Admin.username == current_username).first()
+    if not admin:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Admin user not found."
+        )
+    
+    if payload.username is not None:
+        new_username = payload.username.strip()
+        if not new_username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username cannot be empty."
+            )
+        if new_username != current_username:
+            existing = db.query(Admin).filter(Admin.username == new_username).first()
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Username already exists."
+                )
+            admin.username = new_username
+            
+    if payload.password is not None:
+        new_password = payload.password
+        if not new_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password cannot be empty."
+            )
+        admin.hashed_password = hash_password(new_password)
+        
+    db.commit()
+    db.refresh(admin)
+    
     token = create_jwt_token(admin.username)
     return AdminLoginResponse(status="success", token=token)
 

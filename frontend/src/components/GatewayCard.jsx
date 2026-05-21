@@ -59,7 +59,7 @@ export default function GatewayCard({ gateway, isNext, onToggleActive, onUpdateC
     >
       <div style={{ width: '100%' }}>
         {/* Header row */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="gateway-card-header">
           <div className="gateway-info">
             <div
               className="gateway-avatar"
@@ -124,14 +124,7 @@ export default function GatewayCard({ gateway, isNext, onToggleActive, onUpdateC
             }}
           >
             {/* Sort order always available */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '1rem',
-                marginBottom: '1rem',
-              }}
-            >
+            <div className="gateway-form-grid" style={{ marginBottom: '1rem' }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Sort Order Index</label>
                 <input
@@ -145,7 +138,7 @@ export default function GatewayCard({ gateway, isNext, onToggleActive, onUpdateC
 
             {/* Dynamically generated credential fields from provider's schema */}
             {schema.length > 0 ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="gateway-form-grid">
                 {schema.map((field) => (
                   <div
                     key={field.name}

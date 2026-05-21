@@ -48,7 +48,7 @@ export default function CheckoutForm({ onCheckoutSuccess }) {
       </h2>
 
       {/* Premium Order Receipt Preview */}
-      <div className="card-wrapper" style={{ perspective: '1000px', marginBottom: '1.5rem' }}>
+      <div className="card-wrapper" style={{ perspective: '1000px', marginBottom: '1.5rem', height: '170px' }}>
         <div className="credit-card" style={{ background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', height: '170px', borderRadius: '12px', border: '1px solid var(--glass-border)', boxShadow: '0 8px 32px 0 rgba(0,0,0,0.37)' }}>
           <div className="card-front" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

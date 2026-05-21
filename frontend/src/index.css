@@ -109,6 +109,7 @@ button, input, select {
   letter-spacing: -0.5px;
   background: linear-gradient(to right, #ffffff, #c7d2fe);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
@@ -853,3 +854,156 @@ input:checked + .slider:before {
   color: var(--text-secondary);
   margin-bottom: 0.5rem;
 }
+
+/* ==========================================================================
+   Responsive Layout Extensions & Media Queries
+   ========================================================================== */
+
+/* Horizontal scrollable navigation & sub-navigation tab lists */
+.nav-tabs, .admin-sub-tabs {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+  /* Hide standard scrollbars */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;  /* IE/Edge */
+}
+
+.nav-tabs::-webkit-scrollbar, .admin-sub-tabs::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+/* Table Filters & Controls Row */
+.table-controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Dynamic Grids */
+.gateway-form-grid, .admin-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.api-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+/* Gateway Card Header container */
+.gateway-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+}
+
+/* Responsive Media Queries */
+
+@media (max-width: 900px) {
+  .app-header {
+    flex-direction: column;
+    gap: 1.25rem;
+    align-items: stretch;
+    text-align: center;
+  }
+
+  .logo-section {
+    justify-content: center;
+  }
+
+  .app-header > div:last-of-type {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .api-grid {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .table-controls {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .table-search-bar {
+    width: 100%;
+  }
+
+  .table-search-bar input {
+    width: 100% !important;
+  }
+
+  .table-controls select {
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-container {
+    padding: 1.5rem 0.75rem;
+  }
+
+  .gateway-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .gateway-controls {
+    width: 100%;
+    justify-content: space-between;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--glass-border);
+  }
+
+  .gateway-form-grid, .admin-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Handle span 2 fields in admin config edit form */
+  .admin-edit-grid div[style*="span 2"] {
+    grid-column: span 1 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .metrics-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .metric-card {
+    padding: 1rem !important;
+  }
+
+  .metric-val {
+    font-size: 1.5rem;
+  }
+
+  .card-glass {
+    padding: 1.25rem !important;
+  }
+
+  .checkout-simulator {
+    padding: 1.25rem !important;
+    margin: 1rem auto;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+}
+

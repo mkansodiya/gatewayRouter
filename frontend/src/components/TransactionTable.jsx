@@ -41,7 +41,7 @@ export default function TransactionTable({ transactions = [] }) {
       <div className="logs-header">
         <h2 className="panel-title">Transaction API Router Logs</h2>
         
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <div className="table-controls">
           {/* Search bar */}
           <div className="table-search-bar" style={{ position: 'relative' }}>
             <input 

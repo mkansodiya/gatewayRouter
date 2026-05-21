@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, ToggleLeft, ToggleRight, Settings, Check, Save, AlertTriangle, ArrowUp, LogOut, BookOpen, Copy, Code } from 'lucide-react';
-import { fetchGateways, updateGateway, isAdminLoggedIn, clearAdminToken } from '../api';
+import { ShieldCheck, ToggleLeft, ToggleRight, Settings, Check, Save, AlertTriangle, ArrowUp, LogOut, BookOpen, Copy, Code, Lock, User, Key, Eye, EyeOff } from 'lucide-react';
+import { fetchGateways, updateGateway, isAdminLoggedIn, clearAdminToken, updateAdminCredentials, setAdminToken } from '../api';
 
 function GatewayAdminRow({ gateway, onUpdated, onError }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -122,10 +122,9 @@ function GatewayAdminRow({ gateway, onUpdated, onError }) {
 
       {/* Editable config form */}
       {isEditing && (
-        <div style={{
+        <div className="admin-edit-grid" style={{
           marginTop: '1.25rem', paddingTop: '1.25rem',
-          borderTop: '1px solid var(--glass-border)',
-          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem'
+          borderTop: '1px solid var(--glass-border)'
         }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>Success Rate (%)</label>
@@ -300,7 +299,7 @@ function APIDocumentation() {
           </div>
 
           {/* Main Grid: Request params and Examples */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', alignItems: 'start' }}>
+          <div className="api-grid">
             {/* Left column: Request Body fields */}
             <div className="card-glass" style={{ padding: '1.25rem' }}>
               <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-primary)' }}>
@@ -478,7 +477,7 @@ function APIDocumentation() {
           </div>
 
           {/* Main Grid: Request params and Examples */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', alignItems: 'start' }}>
+          <div className="api-grid">
             {/* Left column: Path Parameter & Response Fields */}
             <div className="card-glass" style={{ padding: '1.25rem' }}>
               <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-primary)' }}>
@@ -593,6 +592,182 @@ function APIDocumentation() {
   );
 }
 
+function SecurityAuthPanel() {
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [successMsg, setSuccessMsg] = useState(null);
+  const [formError, setFormError] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSuccessMsg(null);
+    setFormError(null);
+
+    if (!newUsername.trim() && !newPassword) {
+      setFormError('Please enter a new username or a new password to update.');
+      return;
+    }
+
+    if (newPassword && newPassword !== confirmPassword) {
+      setFormError('Passwords do not match.');
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const data = await updateAdminCredentials(newUsername.trim() || undefined, newPassword || undefined);
+      setAdminToken(data.token);
+      setSuccessMsg('Admin credentials updated successfully! Your active session has been renewed.');
+      setNewUsername('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setFormError(err.message || 'Failed to update credentials.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', color: '#f8fafc', animation: 'fadeIn 0.3s ease', maxWidth: '580px', margin: '0 auto' }}>
+      <div className="card-glass" style={{ padding: '2rem', borderTop: '3px solid var(--color-primary)' }}>
+        <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <Lock size={18} style={{ color: 'var(--color-primary)' }} /> Update Security Credentials
+        </h3>
+        <p style={{ margin: '0 0 1.5rem 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+          Modify your administrative username and access password below. Leave fields blank if you do not wish to change them.
+        </p>
+
+        {formError && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '0.65rem',
+            background: 'var(--color-danger-glow)', border: '1px solid var(--color-danger)',
+            borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1.25rem',
+            fontSize: '0.85rem', color: '#fca5a5'
+          }}>
+            <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+            {formError}
+          </div>
+        )}
+
+        {successMsg && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '0.65rem',
+            background: 'rgba(16, 185, 129, 0.1)', border: '1px solid #10b981',
+            borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1.25rem',
+            fontSize: '0.85rem', color: '#86efac'
+          }}>
+            <Check size={14} style={{ flexShrink: 0, color: '#10b981' }} />
+            {successMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div className="form-group">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <User size={13} /> New Username
+            </label>
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Leave blank to keep current"
+              value={newUsername}
+              onChange={(e) => setNewUsername(e.target.value)}
+              autoComplete="username"
+            />
+          </div>
+
+          <div className="form-group" style={{ position: 'relative' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Key size={13} /> New Password
+            </label>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              className="form-control"
+              placeholder="•••••••• (Leave blank to keep current)"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              style={{ paddingRight: '2.75rem' }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              style={{
+                position: 'absolute',
+                right: '0.85rem',
+                top: '64%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--text-muted)',
+                padding: 0,
+                display: 'flex'
+              }}
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+
+          {newPassword && (
+            <div className="form-group" style={{ position: 'relative', animation: 'fadeIn 0.2s ease' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Key size={13} /> Confirm New Password
+              </label>
+              <input
+                type={showConfirmPassword ? 'text' : 'password'}
+                className="form-control"
+                placeholder="Confirm your new password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
+                required
+                style={{ paddingRight: '2.75rem' }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                style={{
+                  position: 'absolute',
+                  right: '0.85rem',
+                  top: '64%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                  padding: 0,
+                  display: 'flex'
+                }}
+              >
+                {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isUpdating}
+            className="submit-btn"
+            style={{ marginTop: '0.5rem', background: 'linear-gradient(135deg, var(--color-primary), var(--color-secondary))' }}
+          >
+            {isUpdating ? (
+              <><div className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }}></div> Updating credentials...</>
+            ) : (
+              <><Save size={16} /> Update Credentials</>
+            )}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPanel({ token, onLogout }) {
   const [gateways, setGateways] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -652,7 +827,7 @@ export default function AdminPanel({ token, onLogout }) {
       </div>
 
       {/* Admin Panel Sub Tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem' }}>
+      <div className="admin-sub-tabs" style={{ marginBottom: '1.5rem' }}>
         <button
           onClick={() => setActiveSubTab('gateways')}
           className={`tab-btn ${activeSubTab === 'gateways' ? 'active' : ''}`}
@@ -666,6 +841,13 @@ export default function AdminPanel({ token, onLogout }) {
           style={{ minHeight: 'auto', padding: '0.45rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
         >
           <BookOpen size={14} /> API Docs
+        </button>
+        <button
+          onClick={() => setActiveSubTab('security')}
+          className={`tab-btn ${activeSubTab === 'security' ? 'active' : ''}`}
+          style={{ minHeight: 'auto', padding: '0.45rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+        >
+          <Lock size={14} /> Security &amp; Auth
         </button>
       </div>
 
@@ -684,7 +866,7 @@ export default function AdminPanel({ token, onLogout }) {
         </div>
       )}
 
-      {activeSubTab === 'gateways' ? (
+      {activeSubTab === 'gateways' && (
         <>
           {/* Info strip */}
           <div style={{
@@ -728,8 +910,14 @@ export default function AdminPanel({ token, onLogout }) {
             </div>
           )}
         </>
-      ) : (
+      )}
+
+      {activeSubTab === 'docs' && (
         <APIDocumentation />
+      )}
+
+      {activeSubTab === 'security' && (
+        <SecurityAuthPanel />
       )}
     </div>
   );

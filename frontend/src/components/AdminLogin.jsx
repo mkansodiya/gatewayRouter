@@ -56,23 +56,6 @@ export default function AdminLogin({ onLoginSuccess }) {
           </p>
         </div>
 
-        {/* Default credential hint */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.6rem',
-          background: 'rgba(99,102,241,0.1)',
-          border: '1px solid rgba(99,102,241,0.25)',
-          borderRadius: '8px',
-          padding: '0.75rem 1rem',
-          marginBottom: '1.5rem',
-          fontSize: '0.8rem',
-          color: 'var(--text-secondary)'
-        }}>
-          <ShieldCheck size={14} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
-          Default credentials: <strong style={{ color: '#fff' }}>admin</strong> / <strong style={{ color: '#fff' }}>admin123</strong>
-        </div>
-
         {/* Error */}
         {error && (
           <div style={{
@@ -99,7 +82,7 @@ export default function AdminLogin({ onLoginSuccess }) {
             <input
               type="text"
               className="form-control"
-              placeholder="admin"
+              placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required

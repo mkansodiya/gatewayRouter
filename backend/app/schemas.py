@@ -60,3 +60,8 @@ class AdminLoginRequest(BaseModel):
 class AdminLoginResponse(BaseModel):
     status: str
     token: str
+
+class AdminUpdateRequest(BaseModel):
+    username: Optional[str] = None
+    password: Optional[str] = None
+
