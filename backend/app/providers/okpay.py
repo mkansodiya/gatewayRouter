@@ -142,8 +142,5 @@ class OkPayGateway(BasePaymentGateway):
         payment_url = data.get("url", "")
         transaction_id = data.get("transaction_Id", out_trade_no)
 
-        # Build a UPI-style qr_string placeholder (the real QR is at payment_url)
-        qr_string = f"upi://pay?pa=okpay&tr={transaction_id}&am={money_int}&cu=INR"
-
         # Return out_trade_no as gateway_order_id so the webhook can match by it
-        return True, "", qr_string, payment_url, out_trade_no
+        return True, "", "", payment_url, out_trade_no
