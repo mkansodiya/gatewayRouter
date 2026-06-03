@@ -93,6 +93,19 @@ export async function fetchTransaction(transactionId) {
 }
 
 // PROTECTED — router status
+export async function verifyTransactionUtr(transactionId, utr) {
+  const response = await fetch(`${API_BASE_URL}/transactions/${transactionId}/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ utr }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'UTR verification failed');
+  }
+  return response.json();
+}
+
 export async function fetchRouterStatus() {
   const response = await apiFetch(`${API_BASE_URL}/router/status`, {
     headers: { ...authHeaders() },

@@ -8,6 +8,9 @@ class OrderCreateRequest(BaseModel):
     description: Optional[str] = Field("", description="Brief description of the order")
     redirectUrl: Optional[str] = Field("", description="Callback/redirect URL")
 
+class VerifyRequest(BaseModel):
+    utr: str = Field(..., description="The user-provided UTR or verification key")
+
 class OrderResponseData(BaseModel):
     transactionId: str
     amount: str

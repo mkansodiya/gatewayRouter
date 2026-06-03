@@ -13,7 +13,7 @@ from app.models import GatewayConfig, Transaction, Admin
 from app.schemas import (
     OrderCreateRequest, OrderCreateResponse, OrderResponseData,
     GatewayUpdate, GatewayResponse, TransactionResponse,
-    AdminLoginRequest, AdminLoginResponse, AdminUpdateRequest
+    AdminLoginRequest, AdminLoginResponse, AdminUpdateRequest, VerifyRequest
 )
 from app.registry import registry
 from app.router import router_service
@@ -92,6 +92,11 @@ def startup_populate_gateways():
                 "merchant_id": "",
                 "api_key":     "",
                 "notify_url":  "",
+            },
+            "paycrm": {
+                "project_id": "6515219",
+                "apikey":     "d4f98943ccdde024d253d14dd3c54261",
+                "host":       "https://pay-crm.com",
             },
         }
 
@@ -352,8 +357,71 @@ def get_transaction(transaction_id: str, db: Session = Depends(get_db)):
 
     return transaction
 
+@app.post("/api/transactions/{transaction_id}/verify", response_model=TransactionResponse)
+def verify_transaction(transaction_id: str, payload: VerifyRequest, db: Session = Depends(get_db)):
+    """
+    Publicly accessible endpoint to verify a transaction via UTR.
+    Currently specifically routes to the Pay-CRM 'activate_deposit' api.
+    """
+    transaction = db.query(Transaction).filter(Transaction.id == transaction_id).first()
+    if not transaction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transaction not found."
+        )
 
+    if transaction.status == "success":
+        return transaction
 
+    if transaction.gateway_id != "paycrm":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification not supported for this gateway."
+        )
+
+    # Fetch paycrm config
+    db_gateway = db.query(GatewayConfig).filter(GatewayConfig.id == "paycrm").first()
+    if not db_gateway:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Gateway configuration not found."
+        )
+
+    provider = registry.get("paycrm")
+    if not provider:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Gateway provider not found."
+        )
+
+    # Check activation using UTR
+    success, msg, _ = provider.activate_deposit(transaction.reference_id, payload.utr, db_gateway.config_data)
+
+    if success:
+        transaction.utr = payload.utr
+        transaction.error_message = None
+        db.commit()
+
+        # Call status check API to get real status
+        status_success, status_msg, status_data = provider.check_status(transaction.reference_id, db_gateway.config_data)
+        
+        if status_success and status_data and status_data.get("status") == "Success":
+            transaction.status = "success"
+        else:
+            # If still pending or failed on the gateway side, keep it pending
+            transaction.status = "pending"
+            
+        db.commit()
+        db.refresh(transaction)
+        
+        # If it's still pending, we might want to return an HTTP 202 Accepted instead of 200 OK,
+        # but returning the transaction object with status="pending" is fine for the UI.
+        return transaction
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Verification failed: {msg}"
+        )
 @app.get("/api/router/status")
 def get_router_status(db: Session = Depends(get_db), _ = Depends(verify_admin_token)):
     """
