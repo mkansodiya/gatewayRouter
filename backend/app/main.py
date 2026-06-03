@@ -139,7 +139,7 @@ def startup_populate_gateways():
         db.close()
 
 @app.post("/api/orders", response_model=OrderCreateResponse, status_code=status.HTTP_201_CREATED)
-def create_order(payload: OrderCreateRequest, db: Session = Depends(get_db)):
+def create_order(payload: OrderCreateRequest, request: Request, db: Session = Depends(get_db)):
     """
     Rest API endpoint for creating/initiating a payment order.
     Automatically routes the payment using Round-Robin router.
@@ -162,8 +162,14 @@ def create_order(payload: OrderCreateRequest, db: Session = Depends(get_db)):
             
         formatted_amount = f"{transaction.amount:.2f}"
         
-        # Generate the unified frontend checkout URL from env config
-        unified_payment_url = f"{settings.FRONTEND_BASE_URL}/pay/{transaction.id}"
+        # Dynamically determine the frontend base URL
+        origin = request.headers.get("origin")
+        if origin:
+            base_url = origin.rstrip("/")
+        else:
+            base_url = str(request.base_url).rstrip("/")
+            
+        unified_payment_url = f"{base_url}/pay/{transaction.id}"
 
         response_data = OrderResponseData(
             transactionId=transaction.id,
