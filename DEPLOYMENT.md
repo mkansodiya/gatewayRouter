@@ -31,7 +31,7 @@ FRONTEND_BASE_URL=https://your-frontend-domain.com
 VITE_API_BASE_URL=https://your-backend-domain.com
 EOF
 ```
-*Note: Make sure to replace the URLs with your actual domain names or server IP address.*
+*Note: Make sure to replace the URLs with your actual domain names or server IP address. It is crucial to set **`FRONTEND_BASE_URL`** correctly, as it is used by the backend to generate the `/pay/` checkout URLs returned by the API.*
 
 ## Step 3: Start the Application Services
 
