@@ -167,7 +167,7 @@ def create_order(payload: OrderCreateRequest, request: Request, db: Session = De
         if origin:
             base_url = origin.rstrip("/")
         else:
-            base_url = str(request.base_url).rstrip("/")
+            base_url = settings.FRONTEND_BASE_URL.rstrip("/")
             
         unified_payment_url = f"{base_url}/pay/{transaction.id}"
 
