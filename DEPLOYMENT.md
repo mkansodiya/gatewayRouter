@@ -53,17 +53,17 @@ You can check if all services are running properly with:
 docker ps
 ```
 
-## Step 4: Import the Database
+## Step 4: Import the Database (Optional)
 
-Once the database container is up and running, you need to import the initial database structure and data from `db/backup.sql`.
+Once the database container is up and running, the application will automatically create the necessary tables and seed default data (like the admin user and gateway configurations). 
 
-Run the following command from the project root directory:
+However, if you want to import test transactions or verify the setup, run the foolproof import script from the project root directory:
 
 ```bash
-cat db/backup.sql | docker exec -i gateway_db_prod psql -U gateway_user -d gateway_router
+./import_db.sh
 ```
 
-*Note: If you changed the `DB_USER` or `DB_NAME` in your `.env` file, make sure to update `gateway_user` and `gateway_router` in the command above accordingly.*
+*Note: This script safely checks if the database is already initialized and will skip the import to prevent any "duplicate key" or "relation already exists" errors for non-technical users.*
 
 ## Step 5: Verify Deployment
 
