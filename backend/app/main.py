@@ -350,11 +350,13 @@ def get_transaction(transaction_id: str, db: Session = Depends(get_db)):
                         data = result.get("data", {})
                         transaction.status = "success"
                         transaction.error_message = None
-                        transaction.utr = (
-                            data.get("trade_no")
-                            or data.get("order_sn")
-                            or transaction.reference_id
-                        )
+                        if "trade_no" in data:
+                            transaction.utr = data.get("trade_no")
+                        else:
+                            transaction.utr = (
+                                data.get("order_sn")
+                                or transaction.reference_id
+                            )
                         db.commit()
                         db.refresh(transaction)
         except Exception as e:

@@ -96,6 +96,9 @@ export default function PublicPayment({ transactionId }) {
 
   const getUpiIntent = (appScheme) => {
     const baseString = transaction?.qr_string || `upi://pay?pa=merchant@upi&pn=Merchant&am=${transaction?.amount}`;
+    if (baseString.startsWith('http://') || baseString.startsWith('https://')) {
+      return transaction?.payment_url || baseString;
+    }
     switch(appScheme) {
       case 'gpay': return baseString.replace('upi://pay', 'gpay://upi/pay');
       case 'paytm': return baseString.replace('upi://pay', 'paytmmp://pay');
@@ -209,14 +212,22 @@ export default function PublicPayment({ transactionId }) {
             <div className="qr-box-wrapper">
               <div className="qr-box-label">SCAN THIS QR WITH ANY UPI APP</div>
               <div className="qr-box">
-                <QRCodeSVG 
-                  value={transaction.qr_string || `upi://pay?pa=merchant@upi&pn=Merchant&am=${transaction.amount}`} 
-                  size={160} 
-                  bgColor={"#ffffff"}
-                  fgColor={"#000000"}
-                  level={"M"}
-                  includeMargin={false}
-                />
+                {transaction.qr_string && (transaction.qr_string.startsWith('http://') || transaction.qr_string.startsWith('https://')) ? (
+                  <img 
+                    src={transaction.qr_string} 
+                    alt="Stripe UPI QR" 
+                    style={{ width: '160px', height: '160px', objectFit: 'contain', display: 'block', margin: '0 auto' }} 
+                  />
+                ) : (
+                  <QRCodeSVG 
+                    value={transaction.qr_string || `upi://pay?pa=merchant@upi&pn=Merchant&am=${transaction.amount}`} 
+                    size={160} 
+                    bgColor={"#ffffff"}
+                    fgColor={"#000000"}
+                    level={"M"}
+                    includeMargin={false}
+                  />
+                )}
               </div>
             </div>
 
