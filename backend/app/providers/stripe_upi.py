@@ -1,6 +1,7 @@
 import stripe
 from typing import Dict, Any, Tuple, List
 from app.providers.base import BasePaymentGateway
+from app.utils.indian_data import generate_indian_billing_details
 
 
 class StripeUPIGateway(BasePaymentGateway):
@@ -85,22 +86,13 @@ class StripeUPIGateway(BasePaymentGateway):
                 description=description or "Gateway Router payment",
             )
 
-            # 2. Confirm the PaymentIntent with default billing details (required for UPI in India)
+            # 2. Confirm the PaymentIntent with dynamic, realistic Indian billing details (required for UPI in India)
+            billing_details = generate_indian_billing_details()
             confirmed_intent = stripe.PaymentIntent.confirm(
                 intent.id,
                 payment_method_data={
                     "type": "upi",
-                    "billing_details": {
-                        "name": "Customer Name",
-                        "email": "customer@example.com",
-                        "address": {
-                            "line1": "Customer Address Line 1",
-                            "city": "Mumbai",
-                            "state": "MH",
-                            "postal_code": "400001",
-                            "country": "IN"
-                        }
-                    }
+                    "billing_details": billing_details
                 },
             )
         except stripe.error.StripeError as e:
